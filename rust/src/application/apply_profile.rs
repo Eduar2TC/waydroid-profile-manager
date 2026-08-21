@@ -147,8 +147,8 @@ pub fn apply_profile(
     std::thread::sleep(std::time::Duration::from_secs(2));
     emit_progress("StartingSession", "Session running", true);
 
-    // Step 6b: Apply resolution and density immediately via wm commands
-    // These take effect at runtime without session restart
+    // Step 6b: Apply resolution, density and rotation BEFORE opening UI
+    // This way the window is created with the correct size and orientation
     let size_str = format!("{}x{}", config.width, config.height);
     emit_progress("ApplyingDisplay", &format!("wm size {}", size_str), false);
     if let Err(e) = backend.shell_command(&["wm", "size", &size_str]) {
@@ -160,9 +160,31 @@ pub fn apply_profile(
     if let Err(e) = backend.shell_command(&["wm", "density", &density_str]) {
         log::warn!("Failed to set wm density: {}", e);
     }
-    emit_progress("ApplyingDisplay", "Display configuration applied", true);
 
-    // Step 7: Open UI
+    // Apply rotation before opening UI so window is created with correct orientation
+    emit_progress("ApplyingRotation", "Disabling auto-rotation", false);
+    if let Err(e) = backend.shell_command(&[
+        "cmd", "settings", "put", "system", "accelerometer_rotation", "0",
+    ]) {
+        log::warn!("Failed to disable auto-rotation: {}", e);
+    }
+
+    emit_progress(
+        "ApplyingRotation",
+        &format!("Setting user_rotation to {}", config.rotation),
+        false,
+    );
+    if let Err(e) = backend.shell_command(&[
+        "cmd", "settings", "put", "system", "user_rotation", &config.rotation.to_string(),
+    ]) {
+        log::warn!("Failed to set rotation: {}", e);
+    }
+    emit_progress("ApplyingDisplay", "Display and rotation configured", true);
+
+    // Wait for display changes to settle
+    std::thread::sleep(std::time::Duration::from_secs(1));
+
+    // Step 7: Open UI (window will be created with new resolution and orientation)
     emit_progress("OpeningUi", "Opening Waydroid UI", false);
     if let Err(e) = backend.show_full_ui() {
         return ApplyResult {
@@ -182,31 +204,6 @@ pub fn apply_profile(
         };
     }
     emit_progress("OpeningUi", "UI opened", true);
-
-    // Step 8: Apply rotation (this works immediately via settings)
-    emit_progress("ApplyingRotation", "Disabling auto-rotation", false);
-    if let Err(e) = backend.shell_command(&[
-        "cmd", "settings", "put", "system", "accelerometer_rotation", "0",
-    ]) {
-        log::warn!("Failed to disable auto-rotation: {}", e);
-    }
-
-    emit_progress(
-        "ApplyingRotation",
-        &format!("Setting user_rotation to {}", config.rotation),
-        false,
-    );
-    if let Err(e) = backend.shell_command(&[
-        "cmd", "settings", "put", "system", "user_rotation", &config.rotation.to_string(),
-    ]) {
-        return ApplyResult {
-            success: false,
-            message: format!("Failed to set rotation: {}", e),
-            error: Some("RotationFailed".to_string()),
-            needs_restart: false,
-        };
-    }
-    emit_progress("ApplyingRotation", "Rotation applied", true);
 
     // Step 9: Verify
     emit_progress("Verifying", "Verifying configuration", false);
