@@ -242,10 +242,19 @@ impl WaydroidBackend for RealWaydroidBackend {
         // D-Bus registration, networking, sensors, permissions, rootfs mounts,
         // LXC config generation, and container start.
         //
-        // Launch in background because session start is a long-running daemon
-        // (it runs a D-Bus service loop that manages the container lifecycle).
-        // The caller should poll wait_for_session() to know when it's ready.
-        self.runner.run_background("waydroid", &["session", "start"])
+        // CRITICAL: waydroid session start is a long-running D-Bus daemon.
+        // We MUST use nohup + redirect stdout/stderr to prevent the process
+        // from blocking on a full pipe buffer. Without this, the daemon
+        // freezes because nobody reads its stdout.
+        use std::process::{Command, Stdio};
+        Command::new("nohup")
+            .args(["waydroid", "session", "start"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .stdin(Stdio::null())
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| anyhow::anyhow!("Failed to launch session start: {}", e))
     }
 }
 
