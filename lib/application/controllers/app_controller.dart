@@ -15,7 +15,6 @@ class AppController extends ChangeNotifier {
   Profile? _activeProfile;
   WaydroidOrientation _selectedOrientation = WaydroidOrientation.portrait;
   bool _isApplying = false;
-  bool _needsRestart = false;
   String? _error;
   List<String> _logs = [];
 
@@ -27,7 +26,6 @@ class AppController extends ChangeNotifier {
   Profile? get activeProfile => _activeProfile;
   WaydroidOrientation get selectedOrientation => _selectedOrientation;
   bool get isApplying => _isApplying;
-  bool get needsRestart => _needsRestart;
   String? get error => _error;
   List<String> get logs => List.unmodifiable(_logs);
   bool get isReady => _waydroidStatus.installed;
@@ -82,15 +80,10 @@ class AppController extends ChangeNotifier {
       );
 
       final success = result['success'] as bool? ?? false;
-      _needsRestart = result['needs_restart'] as bool? ?? false;
 
       if (success) {
         _activeProfile = profile;
-        if (_needsRestart) {
-          _addLog('✓ Profile applied — session restart needed for resolution');
-        } else {
-          _addLog('✓ Profile applied successfully');
-        }
+        _addLog('✓ Profile applied successfully');
       } else {
         _error = result['message'] as String? ?? 'Failed to apply profile';
         _addLog('✗ ${_error}');
@@ -200,21 +193,6 @@ class AppController extends ChangeNotifier {
     } else {
       _error = 'Failed to reset configuration';
       _addLog('✗ Reset failed');
-    }
-    notifyListeners();
-  }
-
-  /// Restart waydroid session to apply resolution changes.
-  Future<void> restartSession() async {
-    _addLog('Restarting waydroid session...');
-    notifyListeners();
-    final success = _service.restartSession();
-    if (success) {
-      _needsRestart = false;
-      _addLog('✓ Session restarted');
-    } else {
-      _error = 'Failed to restart session';
-      _addLog('✗ Session restart failed');
     }
     notifyListeners();
   }

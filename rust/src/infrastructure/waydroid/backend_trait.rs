@@ -20,5 +20,6 @@ pub trait WaydroidBackend: Send + Sync {
     fn close_full_ui(&self) -> anyhow::Result<CommandResult>;
     fn shell_command(&self, args: &[&str]) -> anyhow::Result<CommandResult>;
     fn wait_for_session(&self, timeout_secs: u64) -> bool;
+    fn wait_for_session_stopped(&self, timeout_secs: u64) -> bool;
     fn wait_for_ui(&self, timeout_secs: u64) -> bool;
 }

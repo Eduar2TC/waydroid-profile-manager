@@ -169,7 +169,7 @@ pub extern "C" fn wpm_duplicate_profile(id: *const c_char, new_name: *const c_ch
 }
 
 /// Apply a profile.
-/// Returns JSON: {"success": bool, "needs_restart": bool, "message": string}
+/// Returns JSON: {"success": bool, "message": string}
 /// Caller must free the returned string with wpm_free_string.
 #[no_mangle]
 pub extern "C" fn wpm_apply_profile(profile_id: *const c_char, orientation: *const c_char) -> *mut c_char {
@@ -183,42 +183,20 @@ pub extern "C" fn wpm_apply_profile(profile_id: *const c_char, orientation: *con
 
     let manager = match MANAGER.lock() {
         Ok(m) => m,
-        Err(_) => return c_string("{\"success\":false,\"needs_restart\":false,\"message\":\"Manager not initialized\"}"),
+        Err(_) => return c_string("{\"success\":false,\"message\":\"Manager not initialized\"}"),
     };
 
     let mgr = match manager.as_ref() {
         Some(m) => m,
-        None => return c_string("{\"success\":false,\"needs_restart\":false,\"message\":\"Manager not initialized\"}"),
+        None => return c_string("{\"success\":false,\"message\":\"Manager not initialized\"}"),
     };
 
     let result = mgr.apply_profile(profile_id, orient);
     let json = serde_json::json!({
         "success": result.success,
-        "needs_restart": result.needs_restart,
         "message": result.message,
     });
     c_string(&json.to_string())
-}
-
-/// Restart waydroid session (needs root).
-/// Call this via request_elevation from Dart.
-/// Returns 0 on success, -1 on error.
-#[no_mangle]
-pub extern "C" fn wpm_restart_session() -> i32 {
-    let manager = match MANAGER.lock() {
-        Ok(m) => m,
-        Err(_) => return -1,
-    };
-
-    let mgr = match manager.as_ref() {
-        Some(m) => m,
-        None => return -1,
-    };
-
-    match mgr.restart_session() {
-        Ok(()) => 0,
-        Err(_) => -1,
-    }
 }
 
 /// Reset Waydroid configuration.

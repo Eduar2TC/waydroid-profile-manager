@@ -21,7 +21,6 @@ class WaydroidBridge {
   late final Pointer<Utf8> Function(
       Pointer<Utf8>, Pointer<Utf8>) _duplicateProfile;
   late final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>) _applyProfile;
-  late final int Function() _restartSession;
   late final int Function() _reset;
   late final void Function(Pointer<Utf8>) _freeString;
 
@@ -55,8 +54,6 @@ class WaydroidBridge {
           Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>),
           Pointer<Utf8> Function(
               Pointer<Utf8>, Pointer<Utf8>)>('wpm_apply_profile');
-      _restartSession = _lib.lookupFunction<Int32 Function(), int Function()>(
-          'wpm_restart_session');
       _reset = _lib.lookupFunction<Int32 Function(), int Function()>(
           'wpm_reset');
       _freeString = _lib.lookupFunction<Void Function(Pointer<Utf8>),
@@ -219,10 +216,10 @@ class WaydroidBridge {
     }
   }
 
-  /// Apply a profile. Returns {success, needs_restart, message}.
+  /// Apply a profile (auto-restarts session for resolution changes).
   ApplyResultData applyProfile(String profileId, String orientation) {
     if (!_available) {
-      return ApplyResultData(success: false, needsRestart: false, message: 'Rust not available');
+      return ApplyResultData(success: false, message: 'Rust not available');
     }
     try {
       final idPtr = profileId.toNativeUtf8();
@@ -230,12 +227,12 @@ class WaydroidBridge {
       try {
         final jsonPtr = _applyProfile(idPtr, orientPtr);
         if (jsonPtr == nullptr) {
-          return ApplyResultData(success: false, needsRestart: false, message: 'FFI returned null');
+          return ApplyResultData(success: false, message: 'FFI returned null');
         }
         final json = jsonPtr.toDartString();
         _freeString(jsonPtr);
         if (json.isEmpty) {
-          return ApplyResultData(success: false, needsRestart: false, message: 'Empty response');
+          return ApplyResultData(success: false, message: 'Empty response');
         }
         final map = jsonDecode(json) as Map<String, dynamic>;
         return ApplyResultData.fromJson(map);
@@ -244,17 +241,7 @@ class WaydroidBridge {
         calloc.free(orientPtr);
       }
     } catch (e) {
-      return ApplyResultData(success: false, needsRestart: false, message: 'Error: $e');
-    }
-  }
-
-  /// Restart waydroid session. Needs root access.
-  bool restartSession() {
-    if (!_available) return false;
-    try {
-      return _restartSession() == 0;
-    } catch (_) {
-      return false;
+      return ApplyResultData(success: false, message: 'Error: $e');
     }
   }
 
@@ -344,19 +331,16 @@ class WaydroidStatusData {
 /// Result data from an apply operation.
 class ApplyResultData {
   final bool success;
-  final bool needsRestart;
   final String message;
 
   ApplyResultData({
     required this.success,
-    required this.needsRestart,
     required this.message,
   });
 
   factory ApplyResultData.fromJson(Map<String, dynamic> json) {
     return ApplyResultData(
       success: json['success'] as bool? ?? false,
-      needsRestart: json['needs_restart'] as bool? ?? false,
       message: json['message'] as String? ?? '',
     );
   }

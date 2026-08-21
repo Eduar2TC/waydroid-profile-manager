@@ -184,12 +184,7 @@ class MockWaydroidService implements WaydroidService {
       orElse: () => throw Exception('Profile not found'),
     );
     _activeProfile = profile;
-    return {'success': true, 'needs_restart': true, 'message': 'Applied'};
-  }
-
-  @override
-  bool restartSession() {
-    return true;
+    return {'success': true, 'message': 'Applied'};
   }
 
   @override

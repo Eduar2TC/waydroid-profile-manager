@@ -190,6 +190,23 @@ impl WaydroidBackend for RealWaydroidBackend {
         }
     }
 
+    fn wait_for_session_stopped(&self, timeout_secs: u64) -> bool {
+        let start = Instant::now();
+        let timeout = Duration::from_secs(timeout_secs);
+        let poll_interval = Duration::from_millis(1000);
+
+        loop {
+            let (container, session) = self.parse_status_output();
+            if container == ContainerStatus::Stopped && session == SessionStatus::Stopped {
+                return true;
+            }
+            if start.elapsed() >= timeout {
+                return false;
+            }
+            std::thread::sleep(poll_interval);
+        }
+    }
+
     fn wait_for_ui(&self, timeout_secs: u64) -> bool {
         let start = Instant::now();
         let timeout = Duration::from_secs(timeout_secs);

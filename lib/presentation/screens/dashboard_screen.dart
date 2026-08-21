@@ -60,12 +60,6 @@ class DashboardScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 24),
 
-                  // Restart banner (shown after apply when resolution changed)
-                  if (controller.needsRestart) ...[
-                    _buildRestartBanner(context, controller),
-                    const SizedBox(height: 16),
-                  ],
-
                   // Apply button
                   _buildApplyButton(context, controller),
                   const SizedBox(height: 16),
@@ -124,47 +118,6 @@ class DashboardScreen extends StatelessWidget {
               style: TextStyle(
                 fontSize: 13,
                 color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRestartBanner(BuildContext context, AppController controller) {
-    return Card(
-      color: Colors.orange.withValues(alpha: 0.15),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.info_outline, color: Colors.orange, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Resolution changes require a session restart to take effect.',
-                    style: TextStyle(
-                      color: Colors.orange.shade200,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              onPressed: controller.isApplying
-                  ? null
-                  : () => _confirmRestart(context, controller),
-              icon: const Icon(Icons.restart_alt, size: 18),
-              label: const Text('Restart Session'),
-              style: FilledButton.styleFrom(
-                backgroundColor: Colors.orange,
-                foregroundColor: Colors.white,
               ),
             ),
           ],
@@ -251,59 +204,6 @@ class DashboardScreen extends StatelessWidget {
     if (selected != null && context.mounted) {
       await controller.applyProfile(selected);
     }
-  }
-
-  Future<void> _confirmRestart(BuildContext context, AppController controller) async {
-    await showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Restart Waydroid'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Run this command in a terminal to apply the new resolution:',
-            ),
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
-                ),
-              ),
-              child: const SelectableText(
-                'waydroid session stop && waydroid session start',
-                style: TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 13,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'This closes all Android apps. After restarting, '
-              'click Refresh to update the status.',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.white.withValues(alpha: 0.6),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
   }
 
   Future<void> _confirmReset(BuildContext context, AppController controller) async {

@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use crate::domain::configuration_calculator::calculate_configuration;
 use crate::domain::orientation::Orientation;
 use crate::domain::profile::Profile;
-use crate::domain::waydroid_status::OperationProgress;
+use crate::domain::waydroid_status::{OperationProgress, SessionStatus};
 use crate::infrastructure::storage::profiles::{AppState, ProfileRepository, WaydroidBackup};
 use crate::infrastructure::waydroid::backend_trait::WaydroidBackend;
 
@@ -13,14 +13,13 @@ pub struct ApplyResult {
     pub success: bool,
     pub message: String,
     pub error: Option<String>,
-    /// Whether a session restart is needed for full effect.
-    pub needs_restart: bool,
 }
 
 /// Apply a profile to Waydroid.
 ///
-/// Phase 1 (no root): Close UI → Set props → Open UI → Rotation
-/// Phase 2 (if needs_restart): User triggers session restart via elevation
+/// Flow: Close UI → Stop session → Set props → Start session → Open UI → Rotation
+/// This ensures resolution changes take effect immediately without requiring
+/// the user to manually restart waydroid.
 pub fn apply_profile(
     backend: &dyn WaydroidBackend,
     repository: &ProfileRepository,
@@ -28,10 +27,7 @@ pub fn apply_profile(
     orientation: Orientation,
     progress_callback: Option<Arc<Mutex<dyn FnMut(OperationProgress) + Send>>>,
 ) -> ApplyResult {
-    let mut log_entries: Vec<String> = Vec::new();
-
     let mut emit_progress = |step: &str, message: &str, completed: bool| {
-        log_entries.push(format!("[{}] {}", step, message));
         log::info!("{}: {}", step, message);
         if let Some(ref cb) = progress_callback {
             if let Ok(mut cb) = cb.lock() {
@@ -52,7 +48,6 @@ pub fn apply_profile(
             success: false,
             message: "Waydroid is not installed".to_string(),
             error: Some("WaydroidNotInstalled".to_string()),
-            needs_restart: false,
         };
     }
     emit_progress("Validating", "Profile validated", true);
@@ -75,8 +70,7 @@ pub fn apply_profile(
 
     // Step 3: Save backup of current config
     emit_progress("Backup", "Saving current configuration", false);
-    let backup = save_backup(backend, repository);
-    if let Err(e) = backup {
+    if let Err(e) = save_backup(backend, repository) {
         log::warn!("Failed to save backup: {}", e);
     }
     emit_progress("Backup", "Backup saved", true);
@@ -86,17 +80,36 @@ pub fn apply_profile(
     if let Err(e) = backend.close_full_ui() {
         log::warn!("Failed to close UI (may not be open): {}", e);
     }
-    std::thread::sleep(std::time::Duration::from_secs(2));
+    // Give the window and GPU processes time to detach
+    std::thread::sleep(std::time::Duration::from_secs(3));
     emit_progress("ClosingUi", "UI closed", true);
 
-    // Step 5: Set properties (persist for next session start)
+    // Step 5: Stop session to apply new properties on restart
+    // persist.waydroid.* props are only read when the session/container starts,
+    // so we must stop and restart the session for resolution changes to take effect.
+    emit_progress("RestartingSession", "Stopping session", false);
+    if let Err(e) = backend.session_stop() {
+        log::warn!("Failed to stop session: {}", e);
+    }
+    // Poll until session is fully stopped (including container)
+    if !backend.wait_for_session_stopped(15) {
+        emit_progress(
+            "RestartingSession",
+            "Warning: session stop timed out, proceeding anyway",
+            true,
+        );
+    }
+    // Extra settle time for LXC processes to fully clean up
+    std::thread::sleep(std::time::Duration::from_secs(2));
+    emit_progress("RestartingSession", "Session stopped", true);
+
+    // Step 6: Set properties (these will be read on session start)
     emit_progress("Configuring", "Setting width", false);
     if let Err(e) = backend.set_prop("persist.waydroid.width", &config.width.to_string()) {
         return ApplyResult {
             success: false,
             message: format!("Failed to set width: {}", e),
             error: Some("ConfigurationFailed".to_string()),
-            needs_restart: false,
         };
     }
     emit_progress("Configuring", &format!("Width = {}", config.width), true);
@@ -107,7 +120,6 @@ pub fn apply_profile(
             success: false,
             message: format!("Failed to set height: {}", e),
             error: Some("ConfigurationFailed".to_string()),
-            needs_restart: false,
         };
     }
     emit_progress("Configuring", &format!("Height = {}", config.height), true);
@@ -118,50 +130,50 @@ pub fn apply_profile(
             success: false,
             message: format!("Failed to set density: {}", e),
             error: Some("ConfigurationFailed".to_string()),
-            needs_restart: false,
         };
     }
     emit_progress("Configuring", &format!("Density = {}", config.density), true);
 
-    // Step 6: Ensure session is running (start if not)
-    emit_progress("StartingSession", "Checking session", false);
-    if backend.get_session_status() != crate::domain::waydroid_status::SessionStatus::Running {
-        emit_progress("StartingSession", "Starting session", false);
-        if let Err(e) = backend.session_start() {
-            return ApplyResult {
-                success: false,
-                message: format!("Failed to start session: {}", e),
-                error: Some("SessionStartFailed".to_string()),
-                needs_restart: false,
-            };
-        }
-        if !backend.wait_for_session(30) {
-            return ApplyResult {
-                success: false,
-                message: "Session start timed out".to_string(),
-                error: Some("Timeout".to_string()),
-                needs_restart: false,
-            };
-        }
+    // Step 7: Start session (props will be applied on startup)
+    emit_progress("RestartingSession", "Starting session", false);
+    if let Err(e) = backend.session_start() {
+        return ApplyResult {
+            success: false,
+            message: format!("Failed to start session: {}", e),
+            error: Some("SessionStartFailed".to_string()),
+        };
     }
-    std::thread::sleep(std::time::Duration::from_secs(2));
-    emit_progress("StartingSession", "Session running", true);
-
-    // Step 6b: Apply resolution, density and rotation BEFORE opening UI
-    // This way the window is created with the correct size and orientation
-    let size_str = format!("{}x{}", config.width, config.height);
-    emit_progress("ApplyingDisplay", &format!("wm size {}", size_str), false);
-    if let Err(e) = backend.shell_command(&["wm", "size", &size_str]) {
-        log::warn!("Failed to set wm size: {}", e);
+    if !backend.wait_for_session(30) {
+        return ApplyResult {
+            success: false,
+            message: "Session start timed out".to_string(),
+            error: Some("Timeout".to_string()),
+        };
     }
+    // Wait for container services to fully initialize
+    std::thread::sleep(std::time::Duration::from_secs(5));
+    emit_progress("RestartingSession", "Session running", true);
 
-    let density_str = config.density.to_string();
-    emit_progress("ApplyingDisplay", &format!("wm density {}", density_str), false);
-    if let Err(e) = backend.shell_command(&["wm", "density", &density_str]) {
-        log::warn!("Failed to set wm density: {}", e);
+    // Step 8: Open UI (window will be created with new resolution)
+    emit_progress("OpeningUi", "Opening Waydroid UI", false);
+    if let Err(e) = backend.show_full_ui() {
+        return ApplyResult {
+            success: false,
+            message: format!("Failed to open UI: {}", e),
+            error: Some("UiOpenFailed".to_string()),
+        };
     }
+    emit_progress("WaitingForUi", "Waiting for UI to be ready", false);
+    if !backend.wait_for_ui(15) {
+        return ApplyResult {
+            success: false,
+            message: "UI open timed out".to_string(),
+            error: Some("Timeout".to_string()),
+        };
+    }
+    emit_progress("OpeningUi", "UI opened", true);
 
-    // Apply rotation before opening UI so window is created with correct orientation
+    // Step 9: Apply rotation after UI is available
     emit_progress("ApplyingRotation", "Disabling auto-rotation", false);
     if let Err(e) = backend.shell_command(&[
         "cmd", "settings", "put", "system", "accelerometer_rotation", "0",
@@ -175,45 +187,26 @@ pub fn apply_profile(
         false,
     );
     if let Err(e) = backend.shell_command(&[
-        "cmd", "settings", "put", "system", "user_rotation", &config.rotation.to_string(),
+        "cmd",
+        "settings",
+        "put",
+        "system",
+        "user_rotation",
+        &config.rotation.to_string(),
     ]) {
         log::warn!("Failed to set rotation: {}", e);
     }
-    emit_progress("ApplyingDisplay", "Display and rotation configured", true);
+    emit_progress("ApplyingRotation", "Rotation applied", true);
 
-    // Wait for display changes to settle
-    std::thread::sleep(std::time::Duration::from_secs(1));
-
-    // Step 7: Open UI (window will be created with new resolution and orientation)
-    emit_progress("OpeningUi", "Opening Waydroid UI", false);
-    if let Err(e) = backend.show_full_ui() {
-        return ApplyResult {
-            success: false,
-            message: format!("Failed to open UI: {}", e),
-            error: Some("UiOpenFailed".to_string()),
-            needs_restart: false,
-        };
-    }
-    emit_progress("WaitingForUi", "Waiting for UI to be ready", false);
-    if !backend.wait_for_ui(15) {
-        return ApplyResult {
-            success: false,
-            message: "UI open timed out".to_string(),
-            error: Some("Timeout".to_string()),
-            needs_restart: false,
-        };
-    }
-    emit_progress("OpeningUi", "UI opened", true);
-
-    // Step 9: Verify
+    // Step 10: Verify
     emit_progress("Verifying", "Verifying configuration", false);
-    if let Err(e) = verify_configuration(backend) {
-        emit_progress("Verifying", &format!("Warning: {}", e), true);
+    if backend.get_session_status() != SessionStatus::Running {
+        emit_progress("Verifying", "Warning: session not running", true);
     } else {
         emit_progress("Verifying", "Configuration verified", true);
     }
 
-    // Step 10: Update active profile in state
+    // Step 11: Update active profile in state
     let _ = repository.save_state(&AppState {
         active_profile_id: Some(profile.id.clone()),
         backup: None,
@@ -223,7 +216,6 @@ pub fn apply_profile(
         success: true,
         message: format!("Profile '{}' applied successfully", profile.name),
         error: None,
-        needs_restart: false,
     }
 }
 
@@ -257,14 +249,6 @@ fn save_backup(
     Ok(())
 }
 
-/// Verify the applied configuration.
-fn verify_configuration(backend: &dyn WaydroidBackend) -> anyhow::Result<()> {
-    if backend.get_session_status() != crate::domain::waydroid_status::SessionStatus::Running {
-        return Err(anyhow::anyhow!("Session not running after apply"));
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -289,11 +273,10 @@ mod tests {
         let result = apply_profile(&backend, &repo, &profile, Orientation::Portrait, None);
         assert!(result.success, "Apply should succeed: {}", result.message);
         assert!(result.error.is_none());
-        assert!(!result.needs_restart); // Changes applied live via wm commands
     }
 
     #[test]
-    fn apply_profile_landscape() {
+    fn apply_profile_restarts_session() {
         let (backend, repo, _tmp) = setup();
         let profile = Profile::builtin(
             "phone-sm", "Phone Small", "Small phone", 640, 360, 160,
@@ -306,6 +289,9 @@ mod tests {
         assert_eq!(state.props["persist.waydroid.width"], "640");
         assert_eq!(state.props["persist.waydroid.height"], "360");
         assert_eq!(state.props["persist.waydroid.density"], "160");
+        // Session was stopped and restarted
+        assert!(state.commands_executed.contains(&"session stop".to_string()));
+        assert!(state.commands_executed.contains(&"session start".to_string()));
     }
 
     #[test]
@@ -347,8 +333,10 @@ mod tests {
             Orientation::Portrait,
         );
         let result = apply_profile(&backend, &repo, &profile, Orientation::Portrait, None);
-        assert!(result.success, "Should start session and apply: {}", result.message);
+        assert!(result.success, "Should restart session and apply: {}", result.message);
         let state = backend.state.lock().unwrap();
+        // Both stop and start should be called (restart flow)
+        assert!(state.commands_executed.contains(&"session stop".to_string()));
         assert!(state.commands_executed.contains(&"session start".to_string()));
     }
 
@@ -372,6 +360,7 @@ mod tests {
         let recorded_steps = steps.lock().unwrap();
         assert!(recorded_steps.contains(&"Validating".to_string()));
         assert!(recorded_steps.contains(&"OpeningUi".to_string()));
+        assert!(recorded_steps.contains(&"RestartingSession".to_string()));
     }
 
     #[test]
@@ -387,5 +376,25 @@ mod tests {
         assert_eq!(state.props["persist.waydroid.width"], "2400");
         assert_eq!(state.props["persist.waydroid.height"], "1080");
         assert_eq!(state.props["persist.waydroid.density"], "420");
+    }
+
+    #[test]
+    fn apply_closes_ui_before_stop() {
+        let (backend, repo, _tmp) = setup();
+        let profile = Profile::builtin(
+            "phone-sm", "Phone Small", "Small phone", 640, 360, 160,
+            Orientation::Portrait,
+        );
+        let result = apply_profile(&backend, &repo, &profile, Orientation::Portrait, None);
+        assert!(result.success);
+        let state = backend.state.lock().unwrap();
+        // Verify order: close-ui before session-stop before session-start before show-full-ui
+        let close_idx = state.commands_executed.iter().position(|c| c == "close-ui").unwrap();
+        let stop_idx = state.commands_executed.iter().position(|c| c == "session stop").unwrap();
+        let start_idx = state.commands_executed.iter().position(|c| c == "session start").unwrap();
+        let open_idx = state.commands_executed.iter().position(|c| c == "show-full-ui").unwrap();
+        assert!(close_idx < stop_idx, "UI must close before session stop");
+        assert!(stop_idx < start_idx, "Session must stop before start");
+        assert!(start_idx < open_idx, "Session must start before UI opens");
     }
 }

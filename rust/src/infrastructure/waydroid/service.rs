@@ -139,6 +139,7 @@ impl WaydroidBackend for FakeWaydroidBackend {
         let mut state = self.state.lock().unwrap();
         state.commands_executed.push("session stop".to_string());
         state.session = SessionStatus::Stopped;
+        state.container = ContainerStatus::Stopped;
         Ok(CommandResult::success(
             String::new(),
             String::new(),
@@ -183,6 +184,11 @@ impl WaydroidBackend for FakeWaydroidBackend {
     fn wait_for_session(&self, _timeout_secs: u64) -> bool {
         let state = self.state.lock().unwrap();
         state.session == SessionStatus::Running
+    }
+
+    fn wait_for_session_stopped(&self, _timeout_secs: u64) -> bool {
+        let state = self.state.lock().unwrap();
+        state.session == SessionStatus::Stopped && state.container == ContainerStatus::Stopped
     }
 
     fn wait_for_ui(&self, _timeout_secs: u64) -> bool {

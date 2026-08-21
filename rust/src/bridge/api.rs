@@ -154,7 +154,6 @@ impl WaydroidManager {
                     success: false,
                     message: "Profile not found".to_string(),
                     error: Some("ProfileNotFound".to_string()),
-                    needs_restart: false,
                 }
             }
         };
@@ -182,7 +181,6 @@ impl WaydroidManager {
                     success: false,
                     message: "Profile not found".to_string(),
                     error: Some("ProfileNotFound".to_string()),
-                    needs_restart: false,
                 }
             }
         };
@@ -236,27 +234,6 @@ impl WaydroidManager {
             .map_err(|e| e.to_string())
     }
 
-    /// Restart waydroid session (stop + start). Needs root.
-    pub fn restart_session(&self) -> Result<(), String> {
-        // Stop
-        let _ = self.backend.session_stop();
-        // Wait for stop
-        for _ in 0..10 {
-            std::thread::sleep(std::time::Duration::from_secs(1));
-            if self.backend.get_session_status() == crate::domain::waydroid_status::SessionStatus::Stopped {
-                break;
-            }
-        }
-        std::thread::sleep(std::time::Duration::from_secs(2));
-        // Start
-        self.backend.session_start().map_err(|e| e.to_string())?;
-        // Wait for start
-        if !self.backend.wait_for_session(30) {
-            return Err("Session restart timed out".to_string());
-        }
-        std::thread::sleep(std::time::Duration::from_secs(3));
-        Ok(())
-    }
 }
 
 /// Serializable version of the manager's state for Flutter consumption.

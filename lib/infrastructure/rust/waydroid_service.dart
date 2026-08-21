@@ -19,9 +19,8 @@ abstract class WaydroidService {
   });
   bool deleteProfile(String id);
   Profile? duplicateProfile(String id, {String? newName});
-  /// Apply a profile. Returns {success, needs_restart, message}.
+  /// Apply a profile (auto-restarts session for resolution changes).
   Map<String, dynamic> applyProfile(String profileId, String orientation);
-  bool restartSession();
   bool reset();
 
   /// Export non-builtin profiles as JSON string.
