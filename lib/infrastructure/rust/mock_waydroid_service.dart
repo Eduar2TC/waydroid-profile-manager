@@ -1,0 +1,194 @@
+import 'dart:math';
+
+import '../../domain/entities/profile.dart';
+import '../../domain/entities/waydroid_status.dart';
+import '../../domain/enums/orientation.dart';
+import 'waydroid_service.dart';
+
+/// Mock Waydroid service for development and testing.
+/// Simulates waydroid behavior without requiring real installation.
+class MockWaydroidService implements WaydroidService {
+  List<Profile> _profiles = [];
+  Profile? _activeProfile;
+  bool _initialized = false;
+  final Random _random = Random();
+
+  MockWaydroidService() {
+    _initBuiltinProfiles();
+  }
+
+  void _initBuiltinProfiles() {
+    final now = DateTime.now();
+    _profiles = [
+      Profile(
+        id: 'phone-sm',
+        name: 'Phone Small',
+        description: 'Small phone profile',
+        baseWidth: 640,
+        baseHeight: 360,
+        density: 160,
+        defaultOrientation: WaydroidOrientation.portrait,
+        createdAt: now,
+        updatedAt: now,
+        builtin: true,
+      ),
+      Profile(
+        id: 'phone-md',
+        name: 'Phone Medium',
+        description: 'Medium phone profile',
+        baseWidth: 800,
+        baseHeight: 450,
+        density: 180,
+        defaultOrientation: WaydroidOrientation.portrait,
+        createdAt: now,
+        updatedAt: now,
+        builtin: true,
+      ),
+      Profile(
+        id: 'phone-lg',
+        name: 'Phone Large',
+        description: 'Large phone profile',
+        baseWidth: 960,
+        baseHeight: 540,
+        density: 200,
+        defaultOrientation: WaydroidOrientation.portrait,
+        createdAt: now,
+        updatedAt: now,
+        builtin: true,
+      ),
+      Profile(
+        id: 'tablet-sm',
+        name: 'Tablet Small',
+        description: 'Small tablet profile',
+        baseWidth: 1024,
+        baseHeight: 640,
+        density: 160,
+        defaultOrientation: WaydroidOrientation.landscape,
+        createdAt: now,
+        updatedAt: now,
+        builtin: true,
+      ),
+      Profile(
+        id: 'tablet-md',
+        name: 'Tablet Medium',
+        description: 'Medium tablet profile',
+        baseWidth: 1280,
+        baseHeight: 800,
+        density: 160,
+        defaultOrientation: WaydroidOrientation.landscape,
+        createdAt: now,
+        updatedAt: now,
+        builtin: true,
+      ),
+      Profile(
+        id: 'tablet-lg',
+        name: 'Tablet Large',
+        description: 'Large tablet profile',
+        baseWidth: 1600,
+        baseHeight: 1000,
+        density: 160,
+        defaultOrientation: WaydroidOrientation.landscape,
+        createdAt: now,
+        updatedAt: now,
+        builtin: true,
+      ),
+    ];
+  }
+
+  @override
+  bool init() {
+    _initialized = true;
+    return true;
+  }
+
+  @override
+  WaydroidStatus getStatus() {
+    return WaydroidStatus(
+      installed: true,
+      container: 'running',
+      session: 'running',
+      ui: _activeProfile != null ? 'open' : 'closed',
+    );
+  }
+
+  @override
+  List<Profile> getProfiles() => List.unmodifiable(_profiles);
+
+  @override
+  Profile? getActiveProfile() => _activeProfile;
+
+  @override
+  bool createProfile({
+    required String name,
+    String? description,
+    required int baseWidth,
+    required int baseHeight,
+    required int density,
+    required String orientation,
+  }) {
+    final now = DateTime.now();
+    final profile = Profile(
+      id: 'custom-${_random.nextInt(100000)}',
+      name: name,
+      description: description,
+      baseWidth: baseWidth,
+      baseHeight: baseHeight,
+      density: density,
+      defaultOrientation: WaydroidOrientation.fromString(orientation),
+      createdAt: now,
+      updatedAt: now,
+      builtin: false,
+    );
+    _profiles.add(profile);
+    return true;
+  }
+
+  @override
+  bool deleteProfile(String id) {
+    final idx = _profiles.indexWhere((p) => p.id == id);
+    if (idx == -1) return false;
+    if (_profiles[idx].builtin) return false;
+    _profiles.removeAt(idx);
+    if (_activeProfile?.id == id) _activeProfile = null;
+    return true;
+  }
+
+  @override
+  Profile? duplicateProfile(String id, {String? newName}) {
+    final original = _profiles.firstWhere(
+      (p) => p.id == id,
+      orElse: () => throw Exception('Profile not found'),
+    );
+    final now = DateTime.now();
+    final dup = Profile(
+      id: 'custom-${_random.nextInt(100000)}',
+      name: newName ?? '${original.name} (Copy)',
+      description: original.description,
+      baseWidth: original.baseWidth,
+      baseHeight: original.baseHeight,
+      density: original.density,
+      defaultOrientation: original.defaultOrientation,
+      createdAt: now,
+      updatedAt: now,
+      builtin: false,
+    );
+    _profiles.add(dup);
+    return dup;
+  }
+
+  @override
+  bool applyProfile(String profileId, String orientation) {
+    final profile = _profiles.firstWhere(
+      (p) => p.id == profileId,
+      orElse: () => throw Exception('Profile not found'),
+    );
+    _activeProfile = profile;
+    return true;
+  }
+
+  @override
+  bool reset() {
+    _activeProfile = null;
+    return true;
+  }
+}

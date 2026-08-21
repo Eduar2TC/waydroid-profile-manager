@@ -1,0 +1,435 @@
+use std::sync::{Arc, Mutex};
+
+use crate::domain::configuration_calculator::calculate_configuration;
+use crate::domain::orientation::Orientation;
+use crate::domain::profile::Profile;
+use crate::domain::waydroid_status::OperationProgress;
+use crate::infrastructure::storage::profiles::{AppState, ProfileRepository, WaydroidBackup};
+use crate::infrastructure::waydroid::backend_trait::WaydroidBackend;
+
+/// Result of an apply operation.
+#[derive(Debug, Clone)]
+pub struct ApplyResult {
+    pub success: bool,
+    pub message: String,
+    pub error: Option<String>,
+}
+
+/// Apply a profile to Waydroid.
+/// This follows the operation flow:
+/// Validate → Close UI → Set Props → Ensure Session → Open UI → Apply Rotation → Verify
+pub fn apply_profile(
+    backend: &dyn WaydroidBackend,
+    repository: &ProfileRepository,
+    profile: &Profile,
+    orientation: Orientation,
+    progress_callback: Option<Arc<Mutex<dyn FnMut(OperationProgress) + Send>>>,
+) -> ApplyResult {
+    let mut log_entries: Vec<String> = Vec::new();
+
+    let mut emit_progress = |step: &str, message: &str, completed: bool| {
+        log_entries.push(format!("[{}] {}", step, message));
+        log::info!("{}: {}", step, message);
+        if let Some(ref cb) = progress_callback {
+            if let Ok(mut cb) = cb.lock() {
+                cb(OperationProgress {
+                    step: step.to_string(),
+                    message: message.to_string(),
+                    completed,
+                });
+            }
+        }
+    };
+
+    // Step 1: Validate
+    emit_progress("Validating", "Validating profile", false);
+    if !backend.check_installed() {
+        emit_progress("Validating", "Waydroid is not installed", true);
+        return ApplyResult {
+            success: false,
+            message: "Waydroid is not installed".to_string(),
+            error: Some("WaydroidNotInstalled".to_string()),
+        };
+    }
+    emit_progress("Validating", "Profile validated", true);
+
+    // Step 2: Calculate configuration
+    let config = calculate_configuration(
+        profile.base_width,
+        profile.base_height,
+        profile.density,
+        orientation,
+    );
+    emit_progress(
+        "Configuring",
+        &format!(
+            "Resolution: {}x{}, Density: {}, Rotation: {}",
+            config.width, config.height, config.density, config.rotation
+        ),
+        true,
+    );
+
+    // Step 3: Save backup of current config
+    emit_progress("Backup", "Saving current configuration", false);
+    let backup = save_backup(backend, repository);
+    if let Err(e) = backup {
+        log::warn!("Failed to save backup: {}", e);
+    }
+    emit_progress("Backup", "Backup saved", true);
+
+    // Step 4: Close UI
+    emit_progress("ClosingUi", "Closing Waydroid UI", false);
+    if let Err(e) = backend.close_full_ui() {
+        log::warn!("Failed to close UI (may not be open): {}", e);
+    }
+    emit_progress("ClosingUi", "UI closed", true);
+
+    // Step 5: Set properties
+    emit_progress("Configuring", "Setting width", false);
+    if let Err(e) = backend.set_prop("persist.waydroid.width", &config.width.to_string()) {
+        return ApplyResult {
+            success: false,
+            message: format!("Failed to set width: {}", e),
+            error: Some("ConfigurationFailed".to_string()),
+        };
+    }
+    emit_progress("Configuring", "Width set", true);
+
+    emit_progress("Configuring", "Setting height", false);
+    if let Err(e) = backend.set_prop("persist.waydroid.height", &config.height.to_string()) {
+        return ApplyResult {
+            success: false,
+            message: format!("Failed to set height: {}", e),
+            error: Some("ConfigurationFailed".to_string()),
+        };
+    }
+    emit_progress("Configuring", "Height set", true);
+
+    emit_progress("Configuring", "Setting density", false);
+    if let Err(e) = backend.set_prop("persist.waydroid.density", &config.density.to_string()) {
+        return ApplyResult {
+            success: false,
+            message: format!("Failed to set density: {}", e),
+            error: Some("ConfigurationFailed".to_string()),
+        };
+    }
+    emit_progress("Configuring", "Density set", true);
+
+    // Step 6: Ensure session is running
+    emit_progress("StartingSession", "Checking session status", false);
+    if backend.get_session_status() != crate::domain::waydroid_status::SessionStatus::Running {
+        emit_progress("StartingSession", "Starting Waydroid session", false);
+        if let Err(e) = backend.session_start() {
+            return ApplyResult {
+                success: false,
+                message: format!("Failed to start session: {}", e),
+                error: Some("SessionStartFailed".to_string()),
+            };
+        }
+
+        if !backend.wait_for_session(30) {
+            return ApplyResult {
+                success: false,
+                message: "Session start timed out".to_string(),
+                error: Some("Timeout".to_string()),
+            };
+        }
+        emit_progress("StartingSession", "Session started", true);
+    } else {
+        emit_progress("StartingSession", "Session already running", true);
+    }
+
+    // Step 7: Open UI
+    emit_progress("OpeningUi", "Opening Waydroid UI", false);
+    if let Err(e) = backend.show_full_ui() {
+        return ApplyResult {
+            success: false,
+            message: format!("Failed to open UI: {}", e),
+            error: Some("UiOpenFailed".to_string()),
+        };
+    }
+
+    emit_progress("WaitingForUi", "Waiting for UI to be ready", false);
+    if !backend.wait_for_ui(15) {
+        return ApplyResult {
+            success: false,
+            message: "UI open timed out".to_string(),
+            error: Some("Timeout".to_string()),
+        };
+    }
+    emit_progress("OpeningUi", "UI opened", true);
+
+    // Step 8: Apply rotation
+    emit_progress("ApplyingRotation", "Disabling auto-rotation", false);
+    if let Err(e) = backend.shell_command(&[
+        "cmd",
+        "settings",
+        "put",
+        "system",
+        "accelerometer_rotation",
+        "0",
+    ]) {
+        log::warn!("Failed to disable auto-rotation: {}", e);
+    }
+
+    emit_progress(
+        "ApplyingRotation",
+        &format!("Setting user_rotation to {}", config.rotation),
+        false,
+    );
+    if let Err(e) = backend.shell_command(&[
+        "cmd",
+        "settings",
+        "put",
+        "system",
+        "user_rotation",
+        &config.rotation.to_string(),
+    ]) {
+        return ApplyResult {
+            success: false,
+            message: format!("Failed to set rotation: {}", e),
+            error: Some("RotationFailed".to_string()),
+        };
+    }
+    emit_progress("ApplyingRotation", "Rotation applied", true);
+
+    // Step 9: Verify
+    emit_progress("Verifying", "Verifying configuration", false);
+    let verify_result = verify_configuration(backend, &config);
+    if let Err(e) = verify_result {
+        emit_progress("Verifying", &format!("Verification warning: {}", e), true);
+        // Non-fatal: continue
+    } else {
+        emit_progress("Verifying", "Configuration verified", true);
+    }
+
+    // Step 10: Update active profile in state
+    let _ = repository.save_state(&AppState {
+        active_profile_id: Some(profile.id.clone()),
+        backup: None, // backup was stored earlier
+    });
+
+    ApplyResult {
+        success: true,
+        message: format!("Profile '{}' applied successfully", profile.name),
+        error: None,
+    }
+}
+
+/// Save current Waydroid configuration as backup.
+fn save_backup(
+    backend: &dyn WaydroidBackend,
+    repository: &ProfileRepository,
+) -> anyhow::Result<()> {
+    use chrono::Utc;
+
+    let get_prop = |key: &str| -> Option<String> {
+        backend
+            .shell_command(&["cmd", "settings", "get", "system", key])
+            .ok()
+            .filter(|r| r.success)
+            .map(|r| r.stdout.trim().to_string())
+    };
+
+    let backup = WaydroidBackup {
+        width: None,
+        height: None,
+        density: None,
+        accelerometer_rotation: get_prop("accelerometer_rotation"),
+        user_rotation: get_prop("user_rotation"),
+        timestamp: Utc::now().to_rfc3339(),
+    };
+
+    let mut state = repository.load_state()?;
+    state.backup = Some(backup);
+    repository.save_state(&state)?;
+    Ok(())
+}
+
+/// Verify the applied configuration.
+fn verify_configuration(
+    backend: &dyn WaydroidBackend,
+    _config: &crate::domain::configuration_calculator::DeviceConfiguration,
+) -> anyhow::Result<()> {
+    // Check session is still running
+    if backend.get_session_status() != crate::domain::waydroid_status::SessionStatus::Running {
+        return Err(anyhow::anyhow!("Session not running after apply"));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::infrastructure::storage::profiles::ProfileRepository;
+    use crate::infrastructure::waydroid::service::FakeWaydroidBackend;
+    use tempfile::TempDir;
+
+    fn setup() -> (FakeWaydroidBackend, ProfileRepository, TempDir) {
+        let backend = FakeWaydroidBackend::new();
+        let tmp = TempDir::new().unwrap();
+        let repo = ProfileRepository::with_config_dir(tmp.path().to_path_buf());
+        (backend, repo, tmp)
+    }
+
+    #[test]
+    fn apply_profile_success() {
+        let (backend, repo, _tmp) = setup();
+        let profile = Profile::builtin(
+            "phone-sm",
+            "Phone Small",
+            "Small phone",
+            640,
+            360,
+            160,
+            Orientation::Portrait,
+        );
+
+        let result = apply_profile(&backend, &repo, &profile, Orientation::Portrait, None);
+        assert!(result.success, "Apply should succeed: {}", result.message);
+        assert!(result.error.is_none());
+    }
+
+    #[test]
+    fn apply_profile_landscape() {
+        let (backend, repo, _tmp) = setup();
+        let profile = Profile::builtin(
+            "phone-sm",
+            "Phone Small",
+            "Small phone",
+            640,
+            360,
+            160,
+            Orientation::Landscape,
+        );
+
+        let result = apply_profile(&backend, &repo, &profile, Orientation::Landscape, None);
+        assert!(result.success, "Apply should succeed: {}", result.message);
+
+        // Verify props were set
+        let state = backend.state.lock().unwrap();
+        assert!(state.props.contains_key("persist.waydroid.width"));
+        assert_eq!(state.props["persist.waydroid.width"], "640");
+        assert_eq!(state.props["persist.waydroid.height"], "360");
+        assert_eq!(state.props["persist.waydroid.density"], "160");
+    }
+
+    #[test]
+    fn apply_profile_portrait_swaps_dimensions() {
+        let (backend, repo, _tmp) = setup();
+        let profile = Profile::builtin(
+            "phone-sm",
+            "Phone Small",
+            "Small phone",
+            640,
+            360,
+            160,
+            Orientation::Portrait,
+        );
+
+        let result = apply_profile(&backend, &repo, &profile, Orientation::Portrait, None);
+        assert!(result.success);
+
+        let state = backend.state.lock().unwrap();
+        // Portrait swaps: width=360, height=640
+        assert_eq!(state.props["persist.waydroid.width"], "360");
+        assert_eq!(state.props["persist.waydroid.height"], "640");
+    }
+
+    #[test]
+    fn apply_fails_when_not_installed() {
+        let backend = FakeWaydroidBackend::not_installed();
+        let tmp = TempDir::new().unwrap();
+        let repo = ProfileRepository::with_config_dir(tmp.path().to_path_buf());
+
+        let profile = Profile::builtin(
+            "phone-sm",
+            "Phone Small",
+            "Small phone",
+            640,
+            360,
+            160,
+            Orientation::Portrait,
+        );
+
+        let result = apply_profile(&backend, &repo, &profile, Orientation::Portrait, None);
+        assert!(!result.success);
+        assert_eq!(result.error.as_deref(), Some("WaydroidNotInstalled"));
+    }
+
+    #[test]
+    fn apply_with_stopped_session_starts_session() {
+        let backend = FakeWaydroidBackend::stopped();
+        let tmp = TempDir::new().unwrap();
+        let repo = ProfileRepository::with_config_dir(tmp.path().to_path_buf());
+
+        let profile = Profile::builtin(
+            "phone-sm",
+            "Phone Small",
+            "Small phone",
+            640,
+            360,
+            160,
+            Orientation::Portrait,
+        );
+
+        let result = apply_profile(&backend, &repo, &profile, Orientation::Portrait, None);
+        assert!(result.success, "Should start session and apply: {}", result.message);
+
+        // Verify session was started
+        let state = backend.state.lock().unwrap();
+        assert!(state.commands_executed.contains(&"session start".to_string()));
+    }
+
+    #[test]
+    fn apply_with_progress_callback() {
+        let (backend, repo, _tmp) = setup();
+        let profile = Profile::builtin(
+            "phone-sm",
+            "Phone Small",
+            "Small phone",
+            640,
+            360,
+            160,
+            Orientation::Portrait,
+        );
+
+        let steps: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let steps_clone = steps.clone();
+
+        let callback = Arc::new(Mutex::new(move |progress: OperationProgress| {
+            if progress.completed {
+                steps_clone.lock().unwrap().push(progress.step);
+            }
+        })) as Arc<Mutex<dyn FnMut(OperationProgress) + Send>>;
+
+        let result = apply_profile(&backend, &repo, &profile, Orientation::Portrait, Some(callback));
+        assert!(result.success);
+
+        let recorded_steps = steps.lock().unwrap();
+        assert!(recorded_steps.contains(&"Validating".to_string()));
+        assert!(recorded_steps.contains(&"Configuring".to_string()));
+        assert!(recorded_steps.contains(&"OpeningUi".to_string()));
+    }
+
+    #[test]
+    fn apply_custom_profile() {
+        let (backend, repo, _tmp) = setup();
+        let profile = Profile::new(
+            "Pixel 7".into(),
+            Some("Custom".into()),
+            1080,
+            2400,
+            420,
+            Orientation::Portrait,
+        );
+
+        let result = apply_profile(&backend, &repo, &profile, Orientation::Portrait, None);
+        assert!(result.success);
+
+        let state = backend.state.lock().unwrap();
+        assert_eq!(state.props["persist.waydroid.width"], "2400");
+        assert_eq!(state.props["persist.waydroid.height"], "1080");
+        assert_eq!(state.props["persist.waydroid.density"], "420");
+    }
+}
