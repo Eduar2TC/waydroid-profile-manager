@@ -84,29 +84,30 @@ pub fn apply_profile(
     std::thread::sleep(std::time::Duration::from_secs(3));
     emit_progress("ClosingUi", "UI closed", true);
 
-    // Step 5: Stop container gracefully to apply new properties on restart.
+    // Step 5: Stop session to apply new properties on restart.
     // persist.waydroid.* props are only read when the container starts,
-    // so we must stop and restart the container for resolution changes to take effect.
+    // so we must stop and restart for resolution changes to take effect.
     //
-    // CRITICAL: We use lxc-stop --timeout (graceful SIGTERM) instead of
-    // waydroid session stop which uses lxc-stop -k (immediate SIGKILL).
-    // The -k flag crashes the GPU composer (SIGABRT in libEGL_mesa.so)
-    // because Mesa cannot clean up GPU state fast enough.
-    emit_progress("RestartingSession", "Stopping container gracefully", false);
+    // NOTE: This triggers a SIGABRT in composer@2.1-service (Mesa/libEGL).
+    // This is inherent to Waydroid's architecture and happens even with manual
+    // restarts. It is not fatal — waydroid recovers when started again.
+    emit_progress("RestartingSession", "Stopping session", false);
     if let Err(e) = backend.container_stop_graceful(10) {
-        log::warn!("Failed to stop container: {}", e);
+        log::warn!("Failed to stop session: {}", e);
     }
-    // Poll until container is fully stopped
+    // Poll until session/container is fully stopped
     if !backend.wait_for_session_stopped(15) {
         emit_progress(
             "RestartingSession",
-            "Warning: container stop timed out, proceeding anyway",
+            "Warning: stop timed out, proceeding anyway",
             true,
         );
     }
-    // Extra settle time for GPU processes to release resources cleanly
-    std::thread::sleep(std::time::Duration::from_secs(3));
-    emit_progress("RestartingSession", "Container stopped", true);
+    // Wait for GPU crash to settle and processes to fully terminate.
+    // The Mesa/libEGL SIGABRT takes time — the coredump handler runs
+    // and the OS needs time to reclaim resources.
+    std::thread::sleep(std::time::Duration::from_secs(8));
+    emit_progress("RestartingSession", "Session stopped", true);
 
     // Step 6: Set properties (these will be read on session start)
     emit_progress("Configuring", "Setting width", false);
@@ -139,26 +140,28 @@ pub fn apply_profile(
     }
     emit_progress("Configuring", &format!("Density = {}", config.density), true);
 
-    // Step 7: Start container (props will be applied on startup)
-    emit_progress("RestartingSession", "Starting container", false);
+    // Step 7: Start session (props will be applied on container startup)
+    // waydroid session start runs in background — it sets up networking,
+    // permissions, rootfs mounts, LXC config, and starts the container.
+    emit_progress("RestartingSession", "Starting session", false);
     if let Err(e) = backend.container_start() {
         return ApplyResult {
             success: false,
-            message: format!("Failed to start container: {}", e),
+            message: format!("Failed to start session: {}", e),
             error: Some("SessionStartFailed".to_string()),
         };
     }
-    // Poll until session is running (the init system inside the container starts everything)
-    if !backend.wait_for_session(30) {
+    // Poll until session is fully running (init starts all Android services)
+    if !backend.wait_for_session(45) {
         return ApplyResult {
             success: false,
-            message: "Container start timed out".to_string(),
+            message: "Session start timed out".to_string(),
             error: Some("Timeout".to_string()),
         };
     }
-    // Wait for container services to fully initialize
-    std::thread::sleep(std::time::Duration::from_secs(5));
-    emit_progress("RestartingSession", "Container running", true);
+    // Wait for Android services (surfaceflinger, composer, platform) to initialize
+    std::thread::sleep(std::time::Duration::from_secs(8));
+    emit_progress("RestartingSession", "Session running", true);
 
     // Step 8: Open UI (window will be created with new resolution)
     emit_progress("OpeningUi", "Opening Waydroid UI", false);

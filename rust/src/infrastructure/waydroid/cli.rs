@@ -223,32 +223,29 @@ impl WaydroidBackend for RealWaydroidBackend {
         }
     }
 
-    fn container_stop_graceful(&self, timeout_secs: u32) -> anyhow::Result<()> {
-        // Use lxc-stop --timeout instead of lxc-stop -k (kill).
-        // The -k flag sends SIGKILL immediately, crashing the GPU composer (SIGABRT in libEGL_mesa.so).
-        // --timeout sends SIGTERM first, giving processes time to clean up GPU state.
-        let result = self.runner.run(
-            "sudo",
-            &[
-                "-n", "lxc-stop", "-P", "/var/lib/waydroid/lxc",
-                "-n", "waydroid", "--timeout", &timeout_secs.to_string(),
-            ],
-        );
-        log::info!("lxc-stop result: {:?}", result);
+    fn container_stop_graceful(&self, _timeout_secs: u32) -> anyhow::Result<()> {
+        // Use `waydroid session stop` which properly cleans up the full session:
+        // networking, sensors, D-Bus services, permissions, rootfs mounts, and container.
+        //
+        // NOTE: This triggers lxc-stop -k internally which causes a SIGABRT in
+        // composer@2.1-service (Mesa/libEGL can't release GPU state fast enough).
+        // This crash is inherent to Waydroid's architecture with Mesa drivers
+        // and happens even with manual restarts. It is not fatal — waydroid
+        // recovers cleanly when started again.
+        let result = self.waydroid_cmd(&["session", "stop"]);
+        log::info!("waydroid session stop result: {:?}", result);
         Ok(())
     }
 
     fn container_start(&self) -> anyhow::Result<()> {
-        // Start the LXC container directly via lxc-start
-        let result = self.runner.run(
-            "sudo",
-            &[
-                "-n", "lxc-start", "-P", "/var/lib/waydroid/lxc",
-                "-F", "-n", "waydroid", "--", "/init",
-            ],
-        );
-        log::info!("lxc-start result: {:?}", result);
-        Ok(())
+        // Use `waydroid session start` which does the full setup:
+        // D-Bus registration, networking, sensors, permissions, rootfs mounts,
+        // LXC config generation, and container start.
+        //
+        // Launch in background because session start is a long-running daemon
+        // (it runs a D-Bus service loop that manages the container lifecycle).
+        // The caller should poll wait_for_session() to know when it's ready.
+        self.runner.run_background("waydroid", &["session", "start"])
     }
 }
 

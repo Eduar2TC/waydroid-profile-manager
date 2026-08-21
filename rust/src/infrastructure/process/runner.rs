@@ -107,6 +107,17 @@ impl ProcessRunner {
         })
     }
 
+    /// Launch a command in the background (fire-and-forget).
+    /// Returns Ok immediately without waiting for the process to finish.
+    pub fn run_background(&self, program: &str, args: &[&str]) -> anyhow::Result<()> {
+        log::info!("Launching background: {} {}", program, args.join(" "));
+        Command::new(program)
+            .args(args)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| anyhow::anyhow!("Failed to launch '{}': {}", program, e))
+    }
+
     /// Check if a program exists in PATH.
     pub fn program_exists(program: &str) -> bool {
         Command::new("which")
