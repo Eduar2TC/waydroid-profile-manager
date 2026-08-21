@@ -17,9 +17,11 @@ pub struct ApplyResult {
 
 /// Apply a profile to Waydroid.
 ///
-/// Flow: Close UI → Stop session → Set props → Start session → Open UI → Rotation
-/// This ensures resolution changes take effect immediately without requiring
-/// the user to manually restart waydroid.
+/// Flow: Close UI → Set props (while running!) → Stop session → Start session → Open UI → Rotation
+///
+/// CRITICAL: `waydroid prop set` only works when the session is RUNNING.
+/// Props must be set BEFORE stopping, so they're saved to the config file.
+/// The new session then reads the updated config on startup.
 pub fn apply_profile(
     backend: &dyn WaydroidBackend,
     repository: &ProfileRepository,
@@ -80,36 +82,13 @@ pub fn apply_profile(
     if let Err(e) = backend.close_full_ui() {
         log::warn!("Failed to close UI (may not be open): {}", e);
     }
-    // Give the window and GPU processes time to detach
-    std::thread::sleep(std::time::Duration::from_secs(3));
+    std::thread::sleep(std::time::Duration::from_secs(2));
     emit_progress("ClosingUi", "UI closed", true);
 
-    // Step 5: Stop session to apply new properties on restart.
-    // persist.waydroid.* props are only read when the container starts,
-    // so we must stop and restart for resolution changes to take effect.
-    //
-    // NOTE: This triggers a SIGABRT in composer@2.1-service (Mesa/libEGL).
-    // This is inherent to Waydroid's architecture and happens even with manual
-    // restarts. It is not fatal — waydroid recovers when started again.
-    emit_progress("RestartingSession", "Stopping session", false);
-    if let Err(e) = backend.container_stop_graceful(10) {
-        log::warn!("Failed to stop session: {}", e);
-    }
-    // Poll until session/container is fully stopped
-    if !backend.wait_for_session_stopped(15) {
-        emit_progress(
-            "RestartingSession",
-            "Warning: stop timed out, proceeding anyway",
-            true,
-        );
-    }
-    // Wait for GPU crash to settle and processes to fully terminate.
-    // The Mesa/libEGL SIGABRT takes time — the coredump handler runs
-    // and the OS needs time to reclaim resources.
-    std::thread::sleep(std::time::Duration::from_secs(8));
-    emit_progress("RestartingSession", "Session stopped", true);
-
-    // Step 6: Set properties (these will be read on session start)
+    // Step 5: Set properties WHILE SESSION IS STILL RUNNING.
+    // `waydroid prop set` communicates with the container manager via D-Bus,
+    // which requires the session to be active. The props are persisted to
+    // the config file and will be read when the session restarts.
     emit_progress("Configuring", "Setting width", false);
     if let Err(e) = backend.set_prop("persist.waydroid.width", &config.width.to_string()) {
         return ApplyResult {
@@ -140,14 +119,33 @@ pub fn apply_profile(
     }
     emit_progress("Configuring", &format!("Density = {}", config.density), true);
 
-    // Step 7: Start session (props will be applied on container startup)
-    // waydroid session start runs in background — it sets up networking,
-    // permissions, rootfs mounts, LXC config, and starts the container.
+    // Step 6: Stop session.
+    // `waydroid session stop` calls lxc-stop -k internally, which triggers a
+    // SIGABRT in composer@2.1-service (Mesa/libEGL can't release GPU state).
+    // This crash is inherent to Waydroid's architecture and happens even with
+    // manual restarts. It is NOT fatal — waydroid recovers on next start.
+    emit_progress("RestartingSession", "Stopping session", false);
+    if let Err(e) = backend.container_stop_graceful(10) {
+        log::warn!("Failed to stop session: {}", e);
+    }
+    // Poll until session/container is fully stopped
+    if !backend.wait_for_session_stopped(15) {
+        emit_progress(
+            "RestartingSession",
+            "Warning: stop timed out, proceeding anyway",
+            true,
+        );
+    }
+    // Wait for GPU crash to settle — Mesa/libEGL SIGABRT + coredump handler
+    std::thread::sleep(std::time::Duration::from_secs(8));
+    emit_progress("RestartingSession", "Session stopped", true);
+
+    // Step 7: Start session (reads the new props from config on startup)
     emit_progress("RestartingSession", "Starting session", false);
     if let Err(e) = backend.container_start() {
         return ApplyResult {
             success: false,
-            message: format!("Failed to start session: {}", e),
+            message: format!("Failed to start session: {} ", e),
             error: Some("SessionStartFailed".to_string()),
         };
     }
@@ -163,7 +161,7 @@ pub fn apply_profile(
     std::thread::sleep(std::time::Duration::from_secs(8));
     emit_progress("RestartingSession", "Session running", true);
 
-    // Step 8: Open UI (window will be created with new resolution)
+    // Step 8: Open UI (window is created with the new resolution from props)
     emit_progress("OpeningUi", "Opening Waydroid UI", false);
     if let Err(e) = backend.show_full_ui() {
         return ApplyResult {
@@ -388,7 +386,7 @@ mod tests {
     }
 
     #[test]
-    fn apply_closes_ui_before_stop() {
+    fn apply_sets_props_before_stop() {
         let (backend, repo, _tmp) = setup();
         let profile = Profile::builtin(
             "phone-sm", "Phone Small", "Small phone", 640, 360, 160,
@@ -397,12 +395,30 @@ mod tests {
         let result = apply_profile(&backend, &repo, &profile, Orientation::Portrait, None);
         assert!(result.success);
         let state = backend.state.lock().unwrap();
-        // Verify order: close-ui before session-stop before session-start before show-full-ui
+        // Props must be set BEFORE container stop (prop set requires running session)
+        let prop_idx = state.commands_executed.iter().position(|c| c.starts_with("prop set")).unwrap();
+        let stop_idx = state.commands_executed.iter().position(|c| c == "container stop graceful").unwrap();
+        assert!(prop_idx < stop_idx, "Props must be set before container stop");
+    }
+
+    #[test]
+    fn apply_closes_ui_before_props() {
+        let (backend, repo, _tmp) = setup();
+        let profile = Profile::builtin(
+            "phone-sm", "Phone Small", "Small phone", 640, 360, 160,
+            Orientation::Portrait,
+        );
+        let result = apply_profile(&backend, &repo, &profile, Orientation::Portrait, None);
+        assert!(result.success);
+        let state = backend.state.lock().unwrap();
+        // Order: close-ui → prop set → stop → start → show-full-ui
         let close_idx = state.commands_executed.iter().position(|c| c == "close-ui").unwrap();
+        let prop_idx = state.commands_executed.iter().position(|c| c.starts_with("prop set")).unwrap();
         let stop_idx = state.commands_executed.iter().position(|c| c == "container stop graceful").unwrap();
         let start_idx = state.commands_executed.iter().position(|c| c == "container start").unwrap();
         let open_idx = state.commands_executed.iter().position(|c| c == "show-full-ui").unwrap();
-        assert!(close_idx < stop_idx, "UI must close before container stop");
+        assert!(close_idx < prop_idx, "UI must close before setting props");
+        assert!(prop_idx < stop_idx, "Props must be set before container stop");
         assert!(stop_idx < start_idx, "Container must stop before start");
         assert!(start_idx < open_idx, "Container must start before UI opens");
     }
