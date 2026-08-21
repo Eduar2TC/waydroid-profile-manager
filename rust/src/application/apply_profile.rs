@@ -224,9 +224,9 @@ pub fn apply_profile(
 
     ApplyResult {
         success: true,
-        message: format!("Profile '{}' applied. Orientation applied immediately. Restart Waydroid for resolution changes.", profile.name),
+        message: format!("Profile '{}' applied successfully", profile.name),
         error: None,
-        needs_restart: true,
+        needs_restart: false,
     }
 }
 
@@ -292,7 +292,7 @@ mod tests {
         let result = apply_profile(&backend, &repo, &profile, Orientation::Portrait, None);
         assert!(result.success, "Apply should succeed: {}", result.message);
         assert!(result.error.is_none());
-        assert!(result.needs_restart); // Resolution change needs restart
+        assert!(!result.needs_restart); // Changes applied live via wm commands
     }
 
     #[test]
