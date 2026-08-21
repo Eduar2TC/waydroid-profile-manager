@@ -27,7 +27,7 @@ pub fn apply_profile(
     orientation: Orientation,
     progress_callback: Option<Arc<Mutex<dyn FnMut(OperationProgress) + Send>>>,
 ) -> ApplyResult {
-    let mut emit_progress = |step: &str, message: &str, completed: bool| {
+    let emit_progress = |step: &str, message: &str, completed: bool| {
         log::info!("{}: {}", step, message);
         if let Some(ref cb) = progress_callback {
             if let Ok(mut cb) = cb.lock() {
