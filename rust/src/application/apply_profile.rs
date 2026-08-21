@@ -209,9 +209,9 @@ pub fn apply_profile(
 
     ApplyResult {
         success: true,
-        message: format!("Profile '{}' applied successfully", profile.name),
+        message: format!("Profile '{}' applied. Orientation applied immediately. Restart Waydroid for resolution changes.", profile.name),
         error: None,
-        needs_restart: true, // Resolution/density require session restart
+        needs_restart: true,
     }
 }
 
