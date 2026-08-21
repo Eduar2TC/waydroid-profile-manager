@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../application/controllers/app_controller.dart';
@@ -19,6 +22,16 @@ class ProfilesScreen extends StatelessWidget {
           appBar: AppBar(
             title: const Text('Profiles'),
             actions: [
+              IconButton(
+                icon: const Icon(Icons.file_upload),
+                onPressed: () => _importProfiles(context, controller),
+                tooltip: 'Import Profiles',
+              ),
+              IconButton(
+                icon: const Icon(Icons.file_download),
+                onPressed: () => _exportProfiles(context, controller),
+                tooltip: 'Export Profiles',
+              ),
               IconButton(
                 icon: const Icon(Icons.add),
                 onPressed: () => _createProfile(context, controller),
@@ -183,5 +196,137 @@ class ProfilesScreen extends StatelessWidget {
         orientation: result.defaultOrientation,
       );
     }
+  }
+
+  void _exportProfiles(BuildContext context, AppController controller) {
+    final json = controller.exportProfiles();
+    // Show the JSON in a dialog with copy option
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Export Profiles'),
+        content: SizedBox(
+          width: 500,
+          height: 400,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Copy this JSON and share it:',
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.1),
+                    ),
+                  ),
+                  child: SingleChildScrollView(
+                    child: SelectableText(
+                      json,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+          FilledButton.icon(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: json));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Copied to clipboard')),
+              );
+              Navigator.pop(ctx);
+            },
+            icon: const Icon(Icons.copy, size: 16),
+            label: const Text('Copy'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _importProfiles(BuildContext context, AppController controller) {
+    final textController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Import Profiles'),
+        content: SizedBox(
+          width: 500,
+          height: 400,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Paste a JSON array of profiles:',
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: TextField(
+                  controller: textController,
+                  maxLines: null,
+                  expands: true,
+                  textAlignVertical: TextAlignVertical.top,
+                  style: const TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: '[{"name": "My Profile", ...}]',
+                    border: const OutlineInputBorder(),
+                    filled: true,
+                    fillColor: Colors.black.withValues(alpha: 0.3),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final json = textController.text.trim();
+              if (json.isEmpty) return;
+              final count = controller.importProfiles(json);
+              Navigator.pop(ctx);
+              if (count > 0) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Imported $count profile(s)')),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('No profiles imported — check JSON format'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            child: const Text('Import'),
+          ),
+        ],
+      ),
+    );
   }
 }

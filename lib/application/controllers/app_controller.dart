@@ -201,6 +201,30 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Export non-builtin profiles as JSON.
+  String exportProfiles() {
+    final json = _service.exportProfiles();
+    _addLog('Exported profiles (${_profiles.where((p) => !p.builtin).length} custom)');
+    return json;
+  }
+
+  /// Import profiles from JSON string.
+  int importProfiles(String json) {
+    final count = _service.importProfiles(json);
+    if (count > 0) {
+      _profiles = _service.getProfiles();
+      _addLog('✓ Imported $count profile(s)');
+      notifyListeners();
+    } else if (count == -1) {
+      _error = 'Failed to import profiles — invalid JSON';
+      _addLog('✗ Import failed: invalid JSON');
+      notifyListeners();
+    } else {
+      _addLog('No new profiles to import');
+    }
+    return count;
+  }
+
   /// Clear logs.
   void clearLogs() {
     _logs.clear();

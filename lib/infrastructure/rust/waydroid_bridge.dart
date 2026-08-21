@@ -58,6 +58,7 @@ class WaydroidBridge {
           'wpm_reset');
       _freeString = _lib.lookupFunction<Void Function(Pointer<Utf8>),
           void Function(Pointer<Utf8>)>('wpm_free_string');
+      _bindExportImport();
       _available = true;
     } catch (_) {
       _available = false;
@@ -237,6 +238,50 @@ class WaydroidBridge {
       return _reset() == 0;
     } catch (_) {
       return false;
+    }
+  }
+
+  // --- Export/Import ---
+
+  late final Pointer<Utf8> Function() _exportProfiles;
+  late final int Function(Pointer<Utf8>) _importProfiles;
+
+  // Call this after _lib is loaded to bind export/import symbols.
+  void _bindExportImport() {
+    try {
+      _exportProfiles = _lib.lookupFunction<Pointer<Utf8> Function(),
+          Pointer<Utf8> Function()>('wpm_export_profiles');
+      _importProfiles = _lib.lookupFunction<
+          Int32 Function(Pointer<Utf8>),
+          int Function(Pointer<Utf8>)>('wpm_import_profiles');
+    } catch (_) {
+      // symbols not found — disable
+    }
+  }
+
+  /// Export non-builtin profiles as pretty-printed JSON.
+  String exportProfiles() {
+    if (!_available) return '[]';
+    try {
+      return _callString(_exportProfiles);
+    } catch (_) {
+      return '[]';
+    }
+  }
+
+  /// Import profiles from a JSON string.
+  /// Returns the number of profiles imported, or -1 on error.
+  int importProfiles(String json) {
+    if (!_available) return -1;
+    try {
+      final jsonPtr = json.toNativeUtf8();
+      try {
+        return _importProfiles(jsonPtr);
+      } finally {
+        calloc.free(jsonPtr);
+      }
+    } catch (_) {
+      return -1;
     }
   }
 }

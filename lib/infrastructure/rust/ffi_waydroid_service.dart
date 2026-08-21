@@ -109,4 +109,16 @@ class FfiWaydroidService implements WaydroidService {
     if (!isAvailable) return false;
     return _bridge.reset();
   }
+
+  @override
+  String exportProfiles() {
+    if (!isAvailable) return '[]';
+    return _bridge.exportProfiles();
+  }
+
+  @override
+  int importProfiles(String json) {
+    if (!isAvailable) return -1;
+    return _bridge.importProfiles(json);
+  }
 }

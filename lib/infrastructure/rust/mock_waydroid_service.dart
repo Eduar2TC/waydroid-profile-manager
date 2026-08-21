@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math';
 
 import '../../domain/entities/profile.dart';
@@ -190,5 +191,44 @@ class MockWaydroidService implements WaydroidService {
   bool reset() {
     _activeProfile = null;
     return true;
+  }
+
+  @override
+  String exportProfiles() {
+    final custom = _profiles.where((p) => !p.builtin).toList();
+    return const JsonEncoder.withIndent('  ').convert(
+      custom.map((p) => p.toJson()).toList(),
+    );
+  }
+
+  @override
+  int importProfiles(String json) {
+    try {
+      final list = jsonDecode(json) as List;
+      var imported = 0;
+      for (final item in list) {
+        final map = item as Map<String, dynamic>;
+        if (map['builtin'] == true) continue;
+        final profile = Profile.fromJson(map);
+        // Re-assign with new ID to avoid collisions
+        final newProfile = Profile(
+          id: 'custom-${_random.nextInt(100000)}',
+          name: profile.name,
+          description: profile.description,
+          baseWidth: profile.baseWidth,
+          baseHeight: profile.baseHeight,
+          density: profile.density,
+          defaultOrientation: profile.defaultOrientation,
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+          builtin: false,
+        );
+        _profiles.add(newProfile);
+        imported++;
+      }
+      return imported;
+    } catch (_) {
+      return -1;
+    }
   }
 }

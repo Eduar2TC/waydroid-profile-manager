@@ -212,6 +212,74 @@ pub extern "C" fn wpm_reset() -> i32 {
     if result.success { 0 } else { -1 }
 }
 
+/// Export all profiles as a JSON string.
+/// Caller must free the returned string with wpm_free_string.
+#[no_mangle]
+pub extern "C" fn wpm_export_profiles() -> *mut c_char {
+    let manager = match MANAGER.lock() {
+        Ok(m) => m,
+        Err(_) => return c_string("[]"),
+    };
+
+    let mgr = match manager.as_ref() {
+        Some(m) => m,
+        None => return c_string("[]"),
+    };
+
+    let profiles = mgr.get_profiles();
+    // Export only non-builtin profiles
+    let custom: Vec<_> = profiles.into_iter().filter(|p| !p.builtin).collect();
+    let json = serde_json::to_string_pretty(&custom).unwrap_or_else(|_| "[]".to_string());
+    c_string(&json)
+}
+
+/// Import profiles from a JSON string.
+/// Returns the number of profiles imported, or -1 on error.
+#[no_mangle]
+pub extern "C" fn wpm_import_profiles(json: *const c_char) -> i32 {
+    let json_str = unsafe { cstr_to_string(json) };
+    if json_str.is_empty() {
+        return -1;
+    }
+
+    let profiles: Vec<crate::domain::profile::Profile> = match serde_json::from_str(&json_str) {
+        Ok(p) => p,
+        Err(_) => return -1,
+    };
+
+    let mut manager = match MANAGER.lock() {
+        Ok(m) => m,
+        Err(_) => return -1,
+    };
+
+    let mgr = match manager.as_mut() {
+        Some(m) => m,
+        None => return -1,
+    };
+
+    let mut imported = 0;
+    for profile in profiles {
+        // Skip built-in profiles from import
+        if profile.builtin {
+            continue;
+        }
+        // Create as new profile (new ID, preserve name/dimensions)
+        let result = mgr.create_profile(
+            profile.name,
+            profile.description,
+            profile.base_width,
+            profile.base_height,
+            profile.density,
+            profile.default_orientation,
+        );
+        if result.is_ok() {
+            imported += 1;
+        }
+    }
+
+    imported
+}
+
 /// Free a string returned by this API.
 #[no_mangle]
 pub extern "C" fn wpm_free_string(s: *mut c_char) {

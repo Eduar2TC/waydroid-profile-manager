@@ -100,5 +100,67 @@ void main() {
         'Tablet Large',
       ]));
     });
+
+    // --- Import/Export tests ---
+
+    test('export returns empty array when no custom profiles', () {
+      final json = service.exportProfiles();
+      expect(json, '[]');
+    });
+
+    test('export includes only custom profiles', () {
+      service.createProfile(
+        name: 'Custom',
+        baseWidth: 800,
+        baseHeight: 600,
+        density: 160,
+        orientation: 'portrait',
+      );
+      final json = service.exportProfiles();
+      expect(json, contains('Custom'));
+      expect(json, isNot(contains('Phone Small')));
+    });
+
+    test('import adds profiles', () {
+      final json = '[{"name": "Imported", "base_width": 1920, "base_height": 1080, "density": 240, "default_orientation": "landscape", "builtin": false}]';
+      final count = service.importProfiles(json);
+      expect(count, 1);
+      expect(service.getProfiles().length, 7);
+      expect(service.getProfiles().last.name, 'Imported');
+    });
+
+    test('import skips builtin profiles', () {
+      final json = '[{"name": "Builtin", "base_width": 800, "base_height": 600, "density": 160, "default_orientation": "portrait", "builtin": true}]';
+      final count = service.importProfiles(json);
+      expect(count, 0);
+      expect(service.getProfiles().length, 6);
+    });
+
+    test('import invalid json returns -1', () {
+      final count = service.importProfiles('not valid json');
+      expect(count, -1);
+    });
+
+    test('export then import roundtrip', () {
+      service.createProfile(
+        name: 'Roundtrip',
+        baseWidth: 1080,
+        baseHeight: 2400,
+        density: 420,
+        orientation: 'portrait',
+      );
+      final exported = service.exportProfiles();
+      expect(exported, contains('Roundtrip'));
+
+      // Import into a fresh service
+      final freshService = MockWaydroidService();
+      freshService.init();
+      expect(freshService.getProfiles().length, 6);
+
+      final count = freshService.importProfiles(exported);
+      expect(count, 1);
+      expect(freshService.getProfiles().length, 7);
+      expect(freshService.getProfiles().last.name, 'Roundtrip');
+    });
   });
 }

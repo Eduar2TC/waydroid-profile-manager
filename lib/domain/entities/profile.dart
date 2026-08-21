@@ -27,19 +27,24 @@ class Profile {
   });
 
   factory Profile.fromJson(Map<String, dynamic> json) {
+    final now = DateTime.now();
     return Profile(
-      id: json['id'] as String,
+      id: json['id'] as String? ?? 'imported-${now.millisecondsSinceEpoch}',
       name: json['name'] as String,
       description: json['description'] as String?,
       baseWidth: json['base_width'] as int,
       baseHeight: json['base_height'] as int,
       density: json['density'] as int,
       defaultOrientation: WaydroidOrientation.fromString(
-        json['default_orientation'] as String,
+        json['default_orientation'] as String? ?? 'portrait',
       ),
-      createdAt: DateTime.parse(json['created_at'] as String),
-      updatedAt: DateTime.parse(json['updated_at'] as String),
-      builtin: json['builtin'] as bool,
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'] as String)
+          : now,
+      updatedAt: json['updated_at'] != null
+          ? DateTime.parse(json['updated_at'] as String)
+          : now,
+      builtin: json['builtin'] as bool? ?? false,
     );
   }
 

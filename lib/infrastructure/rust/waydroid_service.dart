@@ -21,4 +21,10 @@ abstract class WaydroidService {
   Profile? duplicateProfile(String id, {String? newName});
   bool applyProfile(String profileId, String orientation);
   bool reset();
+
+  /// Export non-builtin profiles as JSON string.
+  String exportProfiles();
+
+  /// Import profiles from JSON string. Returns count imported.
+  int importProfiles(String json);
 }
