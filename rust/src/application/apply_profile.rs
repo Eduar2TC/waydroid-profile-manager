@@ -84,24 +84,29 @@ pub fn apply_profile(
     std::thread::sleep(std::time::Duration::from_secs(3));
     emit_progress("ClosingUi", "UI closed", true);
 
-    // Step 5: Stop session to apply new properties on restart
-    // persist.waydroid.* props are only read when the session/container starts,
-    // so we must stop and restart the session for resolution changes to take effect.
-    emit_progress("RestartingSession", "Stopping session", false);
-    if let Err(e) = backend.session_stop() {
-        log::warn!("Failed to stop session: {}", e);
+    // Step 5: Stop container gracefully to apply new properties on restart.
+    // persist.waydroid.* props are only read when the container starts,
+    // so we must stop and restart the container for resolution changes to take effect.
+    //
+    // CRITICAL: We use lxc-stop --timeout (graceful SIGTERM) instead of
+    // waydroid session stop which uses lxc-stop -k (immediate SIGKILL).
+    // The -k flag crashes the GPU composer (SIGABRT in libEGL_mesa.so)
+    // because Mesa cannot clean up GPU state fast enough.
+    emit_progress("RestartingSession", "Stopping container gracefully", false);
+    if let Err(e) = backend.container_stop_graceful(10) {
+        log::warn!("Failed to stop container: {}", e);
     }
-    // Poll until session is fully stopped (including container)
+    // Poll until container is fully stopped
     if !backend.wait_for_session_stopped(15) {
         emit_progress(
             "RestartingSession",
-            "Warning: session stop timed out, proceeding anyway",
+            "Warning: container stop timed out, proceeding anyway",
             true,
         );
     }
-    // Extra settle time for LXC processes to fully clean up
-    std::thread::sleep(std::time::Duration::from_secs(2));
-    emit_progress("RestartingSession", "Session stopped", true);
+    // Extra settle time for GPU processes to release resources cleanly
+    std::thread::sleep(std::time::Duration::from_secs(3));
+    emit_progress("RestartingSession", "Container stopped", true);
 
     // Step 6: Set properties (these will be read on session start)
     emit_progress("Configuring", "Setting width", false);
@@ -134,25 +139,26 @@ pub fn apply_profile(
     }
     emit_progress("Configuring", &format!("Density = {}", config.density), true);
 
-    // Step 7: Start session (props will be applied on startup)
-    emit_progress("RestartingSession", "Starting session", false);
-    if let Err(e) = backend.session_start() {
+    // Step 7: Start container (props will be applied on startup)
+    emit_progress("RestartingSession", "Starting container", false);
+    if let Err(e) = backend.container_start() {
         return ApplyResult {
             success: false,
-            message: format!("Failed to start session: {}", e),
+            message: format!("Failed to start container: {}", e),
             error: Some("SessionStartFailed".to_string()),
         };
     }
+    // Poll until session is running (the init system inside the container starts everything)
     if !backend.wait_for_session(30) {
         return ApplyResult {
             success: false,
-            message: "Session start timed out".to_string(),
+            message: "Container start timed out".to_string(),
             error: Some("Timeout".to_string()),
         };
     }
     // Wait for container services to fully initialize
     std::thread::sleep(std::time::Duration::from_secs(5));
-    emit_progress("RestartingSession", "Session running", true);
+    emit_progress("RestartingSession", "Container running", true);
 
     // Step 8: Open UI (window will be created with new resolution)
     emit_progress("OpeningUi", "Opening Waydroid UI", false);
@@ -289,9 +295,9 @@ mod tests {
         assert_eq!(state.props["persist.waydroid.width"], "640");
         assert_eq!(state.props["persist.waydroid.height"], "360");
         assert_eq!(state.props["persist.waydroid.density"], "160");
-        // Session was stopped and restarted
-        assert!(state.commands_executed.contains(&"session stop".to_string()));
-        assert!(state.commands_executed.contains(&"session start".to_string()));
+        // Container was stopped gracefully and restarted
+        assert!(state.commands_executed.contains(&"container stop graceful".to_string()));
+        assert!(state.commands_executed.contains(&"container start".to_string()));
     }
 
     #[test]
@@ -333,11 +339,11 @@ mod tests {
             Orientation::Portrait,
         );
         let result = apply_profile(&backend, &repo, &profile, Orientation::Portrait, None);
-        assert!(result.success, "Should restart session and apply: {}", result.message);
+        assert!(result.success, "Should restart container and apply: {}", result.message);
         let state = backend.state.lock().unwrap();
-        // Both stop and start should be called (restart flow)
-        assert!(state.commands_executed.contains(&"session stop".to_string()));
-        assert!(state.commands_executed.contains(&"session start".to_string()));
+        // Both graceful stop and start should be called
+        assert!(state.commands_executed.contains(&"container stop graceful".to_string()));
+        assert!(state.commands_executed.contains(&"container start".to_string()));
     }
 
     #[test]
@@ -390,11 +396,11 @@ mod tests {
         let state = backend.state.lock().unwrap();
         // Verify order: close-ui before session-stop before session-start before show-full-ui
         let close_idx = state.commands_executed.iter().position(|c| c == "close-ui").unwrap();
-        let stop_idx = state.commands_executed.iter().position(|c| c == "session stop").unwrap();
-        let start_idx = state.commands_executed.iter().position(|c| c == "session start").unwrap();
+        let stop_idx = state.commands_executed.iter().position(|c| c == "container stop graceful").unwrap();
+        let start_idx = state.commands_executed.iter().position(|c| c == "container start").unwrap();
         let open_idx = state.commands_executed.iter().position(|c| c == "show-full-ui").unwrap();
-        assert!(close_idx < stop_idx, "UI must close before session stop");
-        assert!(stop_idx < start_idx, "Session must stop before start");
-        assert!(start_idx < open_idx, "Session must start before UI opens");
+        assert!(close_idx < stop_idx, "UI must close before container stop");
+        assert!(stop_idx < start_idx, "Container must stop before start");
+        assert!(start_idx < open_idx, "Container must start before UI opens");
     }
 }

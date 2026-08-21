@@ -222,6 +222,34 @@ impl WaydroidBackend for RealWaydroidBackend {
             std::thread::sleep(poll_interval);
         }
     }
+
+    fn container_stop_graceful(&self, timeout_secs: u32) -> anyhow::Result<()> {
+        // Use lxc-stop --timeout instead of lxc-stop -k (kill).
+        // The -k flag sends SIGKILL immediately, crashing the GPU composer (SIGABRT in libEGL_mesa.so).
+        // --timeout sends SIGTERM first, giving processes time to clean up GPU state.
+        let result = self.runner.run(
+            "sudo",
+            &[
+                "-n", "lxc-stop", "-P", "/var/lib/waydroid/lxc",
+                "-n", "waydroid", "--timeout", &timeout_secs.to_string(),
+            ],
+        );
+        log::info!("lxc-stop result: {:?}", result);
+        Ok(())
+    }
+
+    fn container_start(&self) -> anyhow::Result<()> {
+        // Start the LXC container directly via lxc-start
+        let result = self.runner.run(
+            "sudo",
+            &[
+                "-n", "lxc-start", "-P", "/var/lib/waydroid/lxc",
+                "-F", "-n", "waydroid", "--", "/init",
+            ],
+        );
+        log::info!("lxc-start result: {:?}", result);
+        Ok(())
+    }
 }
 
 #[cfg(test)]

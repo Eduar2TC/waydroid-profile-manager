@@ -195,4 +195,20 @@ impl WaydroidBackend for FakeWaydroidBackend {
         let state = self.state.lock().unwrap();
         state.ui == UiStatus::Open
     }
+
+    fn container_stop_graceful(&self, _timeout_secs: u32) -> anyhow::Result<()> {
+        let mut state = self.state.lock().unwrap();
+        state.commands_executed.push("container stop graceful".to_string());
+        state.session = SessionStatus::Stopped;
+        state.container = ContainerStatus::Stopped;
+        Ok(())
+    }
+
+    fn container_start(&self) -> anyhow::Result<()> {
+        let mut state = self.state.lock().unwrap();
+        state.commands_executed.push("container start".to_string());
+        state.session = SessionStatus::Running;
+        state.container = ContainerStatus::Running;
+        Ok(())
+    }
 }

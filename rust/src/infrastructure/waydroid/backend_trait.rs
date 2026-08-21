@@ -22,4 +22,11 @@ pub trait WaydroidBackend: Send + Sync {
     fn wait_for_session(&self, timeout_secs: u64) -> bool;
     fn wait_for_session_stopped(&self, timeout_secs: u64) -> bool;
     fn wait_for_ui(&self, timeout_secs: u64) -> bool;
+
+    /// Graceful container stop using lxc-stop --timeout (sends SIGTERM first).
+    /// Avoids the SIGABRT crash that lxc-stop -k causes in the GPU composer.
+    fn container_stop_graceful(&self, timeout_secs: u32) -> anyhow::Result<()>;
+
+    /// Start the LXC container directly via lxc-start.
+    fn container_start(&self) -> anyhow::Result<()>;
 }
