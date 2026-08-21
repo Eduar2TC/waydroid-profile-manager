@@ -187,15 +187,30 @@ pub fn apply_profile(
     // `cmd settings put` to actually apply rotation.
     std::thread::sleep(std::time::Duration::from_secs(5));
 
-    // Step 9: Apply rotation AFTER UI is available.
-    // The display must be active for rotation settings to take effect.
+    // Step 9: Apply display resolution and rotation AFTER UI is available.
     //
-    // NOTE: We do NOT use wm size/wm density here. The persist.waydroid.*
-    // props already control the window size at session start. Adding wm size
-    // conflicts with user_rotation — wm size sets the display resolution,
-    // then user_rotation rotates it, resulting in the wrong orientation.
-    // The original waydroid script only uses props + rotation.
+    // persist.waydroid.* props control the HOST window size at session start.
+    // But the internal Android display resolution must also be set via wm size
+    // to match. The key insight: wm size must be set to PORTRAIT dimensions
+    // because user_rotation=1 rotates the display 90°.
     //
+    // For Portrait: wm size {width}x{height} (already portrait dims)
+    // For Landscape: wm size {height}x{width} (swap to portrait, then rotate)
+    let (wm_w, wm_h) = match orientation {
+        Orientation::Portrait => (config.width, config.height),
+        Orientation::Landscape => (config.height, config.width),
+    };
+    let wm_size_str = format!("{}x{}", wm_w, wm_h);
+    emit_progress("ApplyingDisplay", &format!("Setting display {}", wm_size_str), false);
+    if let Err(e) = backend.shell_command(&["wm", "size", &wm_size_str]) {
+        log::warn!("Failed to set wm size: {}", e);
+    }
+    let density_str = config.density.to_string();
+    if let Err(e) = backend.shell_command(&["wm", "density", &density_str]) {
+        log::warn!("Failed to set wm density: {}", e);
+    }
+    emit_progress("ApplyingDisplay", "Display configured", true);
+
     emit_progress("ApplyingRotation", "Disabling auto-rotation", false);
     if let Err(e) = backend.shell_command(&[
         "cmd", "settings", "put", "system", "accelerometer_rotation", "0",
