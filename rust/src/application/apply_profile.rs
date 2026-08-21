@@ -161,26 +161,10 @@ pub fn apply_profile(
     std::thread::sleep(std::time::Duration::from_secs(8));
     emit_progress("RestartingSession", "Session running", true);
 
-    // Step 8: Open UI (window is created with the new resolution from props)
-    emit_progress("OpeningUi", "Opening Waydroid UI", false);
-    if let Err(e) = backend.show_full_ui() {
-        return ApplyResult {
-            success: false,
-            message: format!("Failed to open UI: {}", e),
-            error: Some("UiOpenFailed".to_string()),
-        };
-    }
-    emit_progress("WaitingForUi", "Waiting for UI to be ready", false);
-    if !backend.wait_for_ui(15) {
-        return ApplyResult {
-            success: false,
-            message: "UI open timed out".to_string(),
-            error: Some("Timeout".to_string()),
-        };
-    }
-    emit_progress("OpeningUi", "UI opened", true);
-
-    // Step 9: Apply rotation after UI is available
+    // Step 8: Apply rotation BEFORE opening UI.
+    // The platform service reads rotation settings when creating the Wayland
+    // surface. If rotation is set after the window opens, the content renders
+    // in the wrong orientation causing black bars.
     emit_progress("ApplyingRotation", "Disabling auto-rotation", false);
     if let Err(e) = backend.shell_command(&[
         "cmd", "settings", "put", "system", "accelerometer_rotation", "0",
@@ -204,6 +188,25 @@ pub fn apply_profile(
         log::warn!("Failed to set rotation: {}", e);
     }
     emit_progress("ApplyingRotation", "Rotation applied", true);
+
+    // Step 9: Open UI (window is created with correct resolution AND orientation)
+    emit_progress("OpeningUi", "Opening Waydroid UI", false);
+    if let Err(e) = backend.show_full_ui() {
+        return ApplyResult {
+            success: false,
+            message: format!("Failed to open UI: {}", e),
+            error: Some("UiOpenFailed".to_string()),
+        };
+    }
+    emit_progress("WaitingForUi", "Waiting for UI to be ready", false);
+    if !backend.wait_for_ui(15) {
+        return ApplyResult {
+            success: false,
+            message: "UI open timed out".to_string(),
+            error: Some("Timeout".to_string()),
+        };
+    }
+    emit_progress("OpeningUi", "UI opened", true);
 
     // Step 10: Verify
     emit_progress("Verifying", "Verifying configuration", false);
