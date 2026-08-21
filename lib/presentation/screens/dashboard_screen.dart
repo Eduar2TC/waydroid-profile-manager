@@ -254,21 +254,56 @@ class DashboardScreen extends StatelessWidget {
   }
 
   Future<void> _confirmRestart(BuildContext context, AppController controller) async {
-    final confirmed = await showDialog<bool>(
+    await showDialog(
       context: context,
-      builder: (ctx) => ConfirmDialog(
-        title: 'Restart Waydroid Session',
-        message: 'This will restart the Waydroid session to apply the new resolution.\n\n'
-            'Requires administrator privileges.\n'
-            'Waydroid will restart and your Android apps will close.',
-        confirmLabel: 'Restart',
-        confirmColor: Colors.orange,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Restart Waydroid'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Run this command in a terminal to apply the new resolution:',
+            ),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
+                ),
+              ),
+              child: const SelectableText(
+                'waydroid session stop && waydroid session start',
+                style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 13,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'This closes all Android apps. After restarting, '
+              'click Refresh to update the status.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.white.withValues(alpha: 0.6),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK'),
+          ),
+        ],
       ),
     );
-
-    if (confirmed == true && context.mounted) {
-      await controller.restartSession();
-    }
   }
 
   Future<void> _confirmReset(BuildContext context, AppController controller) async {
