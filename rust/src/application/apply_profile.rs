@@ -115,29 +115,35 @@ pub fn apply_profile(
     }
     emit_progress("Configuring", "Density set", true);
 
-    // Step 6: Ensure session is running
-    emit_progress("StartingSession", "Checking session status", false);
-    if backend.get_session_status() != crate::domain::waydroid_status::SessionStatus::Running {
-        emit_progress("StartingSession", "Starting Waydroid session", false);
-        if let Err(e) = backend.session_start() {
-            return ApplyResult {
-                success: false,
-                message: format!("Failed to start session: {}", e),
-                error: Some("SessionStartFailed".to_string()),
-            };
+    // Step 6: Restart session so persist.waydroid.* props take effect
+    emit_progress("RestartingSession", "Stopping session", false);
+    if backend.get_session_status() == crate::domain::waydroid_status::SessionStatus::Running {
+        if let Err(e) = backend.session_stop() {
+            log::warn!("Failed to stop session (may already be stopped): {}", e);
         }
-
-        if !backend.wait_for_session(30) {
-            return ApplyResult {
-                success: false,
-                message: "Session start timed out".to_string(),
-                error: Some("Timeout".to_string()),
-            };
-        }
-        emit_progress("StartingSession", "Session started", true);
-    } else {
-        emit_progress("StartingSession", "Session already running", true);
+        // Wait for session to fully stop
+        std::thread::sleep(std::time::Duration::from_secs(2));
     }
+    emit_progress("RestartingSession", "Session stopped", true);
+
+    emit_progress("StartingSession", "Starting session", false);
+    if let Err(e) = backend.session_start() {
+        return ApplyResult {
+            success: false,
+            message: format!("Failed to start session: {}", e),
+            error: Some("SessionStartFailed".to_string()),
+        };
+    }
+
+    emit_progress("StartingSession", "Waiting for session...", false);
+    if !backend.wait_for_session(30) {
+        return ApplyResult {
+            success: false,
+            message: "Session start timed out".to_string(),
+            error: Some("Timeout".to_string()),
+        };
+    }
+    emit_progress("StartingSession", "Session started", true);
 
     // Step 7: Open UI
     emit_progress("OpeningUi", "Opening Waydroid UI", false);
@@ -358,8 +364,8 @@ mod tests {
     }
 
     #[test]
-    fn apply_with_stopped_session_starts_session() {
-        let backend = FakeWaydroidBackend::stopped();
+    fn apply_stops_and_restarts_session() {
+        let backend = FakeWaydroidBackend::new(); // session is running
         let tmp = TempDir::new().unwrap();
         let repo = ProfileRepository::with_config_dir(tmp.path().to_path_buf());
 
@@ -374,10 +380,11 @@ mod tests {
         );
 
         let result = apply_profile(&backend, &repo, &profile, Orientation::Portrait, None);
-        assert!(result.success, "Should start session and apply: {}", result.message);
+        assert!(result.success, "Should restart session and apply: {}", result.message);
 
-        // Verify session was started
+        // Verify session was stopped then started
         let state = backend.state.lock().unwrap();
+        assert!(state.commands_executed.contains(&"session stop".to_string()));
         assert!(state.commands_executed.contains(&"session start".to_string()));
     }
 
