@@ -60,6 +60,12 @@ class DashboardScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 24),
 
+                  // Restart banner (shown after apply when resolution changed)
+                  if (controller.needsRestart) ...[
+                    _buildRestartBanner(context, controller),
+                    const SizedBox(height: 16),
+                  ],
+
                   // Apply button
                   _buildApplyButton(context, controller),
                   const SizedBox(height: 16),
@@ -118,6 +124,47 @@ class DashboardScreen extends StatelessWidget {
               style: TextStyle(
                 fontSize: 13,
                 color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRestartBanner(BuildContext context, AppController controller) {
+    return Card(
+      color: Colors.orange.withValues(alpha: 0.15),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.info_outline, color: Colors.orange, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Resolution changes require a session restart to take effect.',
+                    style: TextStyle(
+                      color: Colors.orange.shade200,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: controller.isApplying
+                  ? null
+                  : () => _confirmRestart(context, controller),
+              icon: const Icon(Icons.restart_alt, size: 18),
+              label: const Text('Restart Session'),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.orange,
+                foregroundColor: Colors.white,
               ),
             ),
           ],
@@ -203,6 +250,24 @@ class DashboardScreen extends StatelessWidget {
 
     if (selected != null && context.mounted) {
       await controller.applyProfile(selected);
+    }
+  }
+
+  Future<void> _confirmRestart(BuildContext context, AppController controller) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => ConfirmDialog(
+        title: 'Restart Waydroid Session',
+        message: 'This will restart the Waydroid session to apply the new resolution.\n\n'
+            'Requires administrator privileges.\n'
+            'Waydroid will restart and your Android apps will close.',
+        confirmLabel: 'Restart',
+        confirmColor: Colors.orange,
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      await controller.restartSession();
     }
   }
 

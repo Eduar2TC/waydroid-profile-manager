@@ -60,6 +60,31 @@ impl RealWaydroidBackend {
 
         (container, session)
     }
+
+    /// Restart session by stopping then starting.
+    /// Waits for the container to fully stop before starting.
+    pub fn session_restart(&self) -> anyhow::Result<()> {
+        let _ = self.session_stop();
+        // Wait for container to fully stop (poll status)
+        for _ in 0..20 {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            let (container, session) = self.parse_status_output();
+            if container == ContainerStatus::Stopped && session == SessionStatus::Stopped {
+                break;
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        self.session_start()?;
+        // Wait for session to be running
+        for _ in 0..30 {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            let (_, session) = self.parse_status_output();
+            if session == SessionStatus::Running {
+                return Ok(());
+            }
+        }
+        Err(anyhow::anyhow!("Session restart timed out"))
+    }
 }
 
 impl WaydroidBackend for RealWaydroidBackend {

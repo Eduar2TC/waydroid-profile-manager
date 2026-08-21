@@ -67,8 +67,8 @@ void main() {
     });
 
     test('apply profile sets active', () {
-      final success = service.applyProfile('phone-sm', 'portrait');
-      expect(success, isTrue);
+      final result = service.applyProfile('phone-sm', 'portrait');
+      expect(result['success'], isTrue);
       expect(service.getActiveProfile()?.id, 'phone-sm');
     });
 

@@ -99,9 +99,22 @@ class FfiWaydroidService implements WaydroidService {
   }
 
   @override
-  bool applyProfile(String profileId, String orientation) {
+  Map<String, dynamic> applyProfile(String profileId, String orientation) {
+    if (!isAvailable) {
+      return {'success': false, 'needs_restart': false, 'message': 'Rust not available'};
+    }
+    final result = _bridge.applyProfile(profileId, orientation);
+    return {
+      'success': result.success,
+      'needs_restart': result.needsRestart,
+      'message': result.message,
+    };
+  }
+
+  @override
+  bool restartSession() {
     if (!isAvailable) return false;
-    return _bridge.applyProfile(profileId, orientation);
+    return _bridge.restartSession();
   }
 
   @override

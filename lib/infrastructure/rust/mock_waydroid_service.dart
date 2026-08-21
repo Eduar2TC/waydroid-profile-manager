@@ -178,12 +178,17 @@ class MockWaydroidService implements WaydroidService {
   }
 
   @override
-  bool applyProfile(String profileId, String orientation) {
+  Map<String, dynamic> applyProfile(String profileId, String orientation) {
     final profile = _profiles.firstWhere(
       (p) => p.id == profileId,
       orElse: () => throw Exception('Profile not found'),
     );
     _activeProfile = profile;
+    return {'success': true, 'needs_restart': true, 'message': 'Applied'};
+  }
+
+  @override
+  bool restartSession() {
     return true;
   }
 

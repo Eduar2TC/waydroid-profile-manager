@@ -20,7 +20,8 @@ class WaydroidBridge {
   late final int Function(Pointer<Utf8>) _deleteProfile;
   late final Pointer<Utf8> Function(
       Pointer<Utf8>, Pointer<Utf8>) _duplicateProfile;
-  late final int Function(Pointer<Utf8>, Pointer<Utf8>) _applyProfile;
+  late final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>) _applyProfile;
+  late final int Function() _restartSession;
   late final int Function() _reset;
   late final void Function(Pointer<Utf8>) _freeString;
 
@@ -51,9 +52,11 @@ class WaydroidBridge {
           Pointer<Utf8> Function(
               Pointer<Utf8>, Pointer<Utf8>)>('wpm_duplicate_profile');
       _applyProfile = _lib.lookupFunction<
-          Int32 Function(Pointer<Utf8>, Pointer<Utf8>),
-          int Function(
+          Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>),
+          Pointer<Utf8> Function(
               Pointer<Utf8>, Pointer<Utf8>)>('wpm_apply_profile');
+      _restartSession = _lib.lookupFunction<Int32 Function(), int Function()>(
+          'wpm_restart_session');
       _reset = _lib.lookupFunction<Int32 Function(), int Function()>(
           'wpm_reset');
       _freeString = _lib.lookupFunction<Void Function(Pointer<Utf8>),
@@ -216,17 +219,40 @@ class WaydroidBridge {
     }
   }
 
-  bool applyProfile(String profileId, String orientation) {
-    if (!_available) return false;
+  /// Apply a profile. Returns {success, needs_restart, message}.
+  ApplyResultData applyProfile(String profileId, String orientation) {
+    if (!_available) {
+      return ApplyResultData(success: false, needsRestart: false, message: 'Rust not available');
+    }
     try {
       final idPtr = profileId.toNativeUtf8();
       final orientPtr = orientation.toNativeUtf8();
       try {
-        return _applyProfile(idPtr, orientPtr) == 0;
+        final jsonPtr = _applyProfile(idPtr, orientPtr);
+        if (jsonPtr == nullptr) {
+          return ApplyResultData(success: false, needsRestart: false, message: 'FFI returned null');
+        }
+        final json = jsonPtr.toDartString();
+        _freeString(jsonPtr);
+        if (json.isEmpty) {
+          return ApplyResultData(success: false, needsRestart: false, message: 'Empty response');
+        }
+        final map = jsonDecode(json) as Map<String, dynamic>;
+        return ApplyResultData.fromJson(map);
       } finally {
         calloc.free(idPtr);
         calloc.free(orientPtr);
       }
+    } catch (e) {
+      return ApplyResultData(success: false, needsRestart: false, message: 'Error: $e');
+    }
+  }
+
+  /// Restart waydroid session. Needs root access.
+  bool restartSession() {
+    if (!_available) return false;
+    try {
+      return _restartSession() == 0;
     } catch (_) {
       return false;
     }
@@ -312,5 +338,26 @@ class WaydroidStatusData {
   factory WaydroidStatusData.notInstalled() {
     return WaydroidStatusData(
         installed: false, container: 'stopped', session: 'stopped', ui: 'closed');
+  }
+}
+
+/// Result data from an apply operation.
+class ApplyResultData {
+  final bool success;
+  final bool needsRestart;
+  final String message;
+
+  ApplyResultData({
+    required this.success,
+    required this.needsRestart,
+    required this.message,
+  });
+
+  factory ApplyResultData.fromJson(Map<String, dynamic> json) {
+    return ApplyResultData(
+      success: json['success'] as bool? ?? false,
+      needsRestart: json['needs_restart'] as bool? ?? false,
+      message: json['message'] as String? ?? '',
+    );
   }
 }
