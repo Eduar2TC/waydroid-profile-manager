@@ -147,6 +147,21 @@ pub fn apply_profile(
     std::thread::sleep(std::time::Duration::from_secs(2));
     emit_progress("StartingSession", "Session running", true);
 
+    // Step 6b: Apply resolution and density immediately via wm commands
+    // These take effect at runtime without session restart
+    let size_str = format!("{}x{}", config.width, config.height);
+    emit_progress("ApplyingDisplay", &format!("wm size {}", size_str), false);
+    if let Err(e) = backend.shell_command(&["wm", "size", &size_str]) {
+        log::warn!("Failed to set wm size: {}", e);
+    }
+
+    let density_str = config.density.to_string();
+    emit_progress("ApplyingDisplay", &format!("wm density {}", density_str), false);
+    if let Err(e) = backend.shell_command(&["wm", "density", &density_str]) {
+        log::warn!("Failed to set wm density: {}", e);
+    }
+    emit_progress("ApplyingDisplay", "Display configuration applied", true);
+
     // Step 7: Open UI
     emit_progress("OpeningUi", "Opening Waydroid UI", false);
     if let Err(e) = backend.show_full_ui() {
