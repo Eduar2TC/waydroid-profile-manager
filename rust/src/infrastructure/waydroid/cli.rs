@@ -167,9 +167,11 @@ impl WaydroidBackend for RealWaydroidBackend {
     }
 
     fn shell_command(&self, args: &[&str]) -> anyhow::Result<CommandResult> {
-        let mut shell_args = vec!["shell"];
+        // waydroid shell requires root (UID 0 check in waydroid's Python code).
+        // Use `sudo -n` which works without password prompt when sudoers is configured.
+        let mut shell_args = vec!["-n", "waydroid", "shell"];
         shell_args.extend_from_slice(args);
-        self.waydroid_cmd(&shell_args)
+        self.runner.run("sudo", &shell_args)
     }
 
     fn wait_for_session(&self, timeout_secs: u64) -> bool {
