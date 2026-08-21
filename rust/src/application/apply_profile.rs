@@ -187,27 +187,15 @@ pub fn apply_profile(
     // `cmd settings put` to actually apply rotation.
     std::thread::sleep(std::time::Duration::from_secs(5));
 
-    // Step 9: Apply display settings and rotation AFTER UI is available.
-    // The display must be active for these settings to take effect.
+    // Step 9: Apply rotation AFTER UI is available.
+    // The display must be active for rotation settings to take effect.
     //
-    // wm size/density: Sets the actual Android display resolution.
-    // persist.waydroid.* props control the host window size, but wm size
-    // controls the internal Android display that fills that window.
-    let size_str = format!("{}x{}", config.width, config.height);
-    emit_progress("ApplyingDisplay", &format!("Setting wm size {}", size_str), false);
-    if let Err(e) = backend.shell_command(&["wm", "size", &size_str]) {
-        log::warn!("Failed to set wm size: {}", e);
-    }
-
-    let density_str = config.density.to_string();
-    emit_progress("ApplyingDisplay", &format!("Setting wm density {}", density_str), false);
-    if let Err(e) = backend.shell_command(&["wm", "density", &density_str]) {
-        log::warn!("Failed to set wm density: {}", e);
-    }
-    emit_progress("ApplyingDisplay", "Display size configured", true);
-
-    // Rotation: set accelerometer_rotation=0 (disable auto-rotate)
-    // and user_rotation to the target orientation.
+    // NOTE: We do NOT use wm size/wm density here. The persist.waydroid.*
+    // props already control the window size at session start. Adding wm size
+    // conflicts with user_rotation — wm size sets the display resolution,
+    // then user_rotation rotates it, resulting in the wrong orientation.
+    // The original waydroid script only uses props + rotation.
+    //
     emit_progress("ApplyingRotation", "Disabling auto-rotation", false);
     if let Err(e) = backend.shell_command(&[
         "cmd", "settings", "put", "system", "accelerometer_rotation", "0",
