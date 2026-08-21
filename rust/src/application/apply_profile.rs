@@ -77,11 +77,13 @@ pub fn apply_profile(
     }
     emit_progress("Backup", "Backup saved", true);
 
-    // Step 4: Close UI
+    // Step 4: Close UI and wait for it to fully disconnect
     emit_progress("ClosingUi", "Closing Waydroid UI", false);
     if let Err(e) = backend.close_full_ui() {
         log::warn!("Failed to close UI (may not be open): {}", e);
     }
+    // Wait for UI process and composer to fully disconnect
+    std::thread::sleep(std::time::Duration::from_secs(3));
     emit_progress("ClosingUi", "UI closed", true);
 
     // Step 5: Set properties
@@ -116,13 +118,15 @@ pub fn apply_profile(
     emit_progress("Configuring", "Density set", true);
 
     // Step 6: Restart session so persist.waydroid.* props take effect
+    // The UI must be closed first (Step 4) so the graphics composer disconnects
+    // from the Wayland display before the container is stopped.
     emit_progress("RestartingSession", "Stopping session", false);
     if backend.get_session_status() == crate::domain::waydroid_status::SessionStatus::Running {
         if let Err(e) = backend.session_stop() {
-            log::warn!("Failed to stop session (may already be stopped): {}", e);
+            log::warn!("Failed to stop session: {}", e);
         }
-        // Wait for session to fully stop
-        std::thread::sleep(std::time::Duration::from_secs(2));
+        // Wait for container processes to fully terminate
+        std::thread::sleep(std::time::Duration::from_secs(5));
     }
     emit_progress("RestartingSession", "Session stopped", true);
 
@@ -143,6 +147,8 @@ pub fn apply_profile(
             error: Some("Timeout".to_string()),
         };
     }
+    // Give the session time to fully initialize before opening UI
+    std::thread::sleep(std::time::Duration::from_secs(3));
     emit_progress("StartingSession", "Session started", true);
 
     // Step 7: Open UI
