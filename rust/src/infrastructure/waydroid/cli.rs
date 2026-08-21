@@ -169,9 +169,34 @@ impl WaydroidBackend for RealWaydroidBackend {
     fn shell_command(&self, args: &[&str]) -> anyhow::Result<CommandResult> {
         // waydroid shell requires root (UID 0 check in waydroid's Python code).
         // Use `sudo -n` which works without password prompt when sudoers is configured.
-        let mut shell_args = vec!["-n", "waydroid", "shell"];
-        shell_args.extend_from_slice(args);
-        self.runner.run("sudo", &shell_args)
+        //
+        // Retry up to 3 times with 2s delay — after a session restart, the Android
+        // settings provider may not be ready immediately, causing commands to
+        // succeed (exit 0) without actually applying the setting.
+        let mut last_result = None;
+        for attempt in 0..3 {
+            let mut shell_args = vec!["-n", "waydroid", "shell"];
+            shell_args.extend_from_slice(args);
+            match self.runner.run("sudo", &shell_args) {
+                Ok(result) => {
+                    if result.success {
+                        log::info!("shell_command OK (attempt {}): {}", attempt + 1, args.join(" "));
+                        return Ok(result);
+                    }
+                    log::warn!("shell_command failed (attempt {}): {} stderr={}", attempt + 1, args.join(" "), result.stderr.trim());
+                    last_result = Some(result);
+                }
+                Err(e) => {
+                    log::warn!("shell_command error (attempt {}): {} {}", attempt + 1, args.join(" "), e);
+                }
+            }
+            if attempt < 2 {
+                std::thread::sleep(Duration::from_secs(2));
+            }
+        }
+        Ok(last_result.unwrap_or_else(|| CommandResult::failure(
+            Some(1), String::new(), "shell_command failed after 3 attempts".to_string(), Duration::from_millis(0),
+        )))
     }
 
     fn wait_for_session(&self, timeout_secs: u64) -> bool {

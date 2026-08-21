@@ -157,8 +157,10 @@ pub fn apply_profile(
             error: Some("Timeout".to_string()),
         };
     }
-    // Wait for Android services (surfaceflinger, composer, platform) to initialize
-    std::thread::sleep(std::time::Duration::from_secs(8));
+    // Wait for Android services (surfaceflinger, composer, platform, settings provider)
+    // to fully initialize. After a nohup session start, the settings provider
+    // inside the container may take extra time to become available via D-Bus.
+    std::thread::sleep(std::time::Duration::from_secs(10));
     emit_progress("RestartingSession", "Session running", true);
 
     // Step 8: Open UI (window is created with new resolution from props)
@@ -180,10 +182,14 @@ pub fn apply_profile(
     }
     emit_progress("OpeningUi", "UI opened", true);
 
+    // Wait for the platform service and settings provider to settle
+    // after UI creation. The settings provider must be ready for
+    // `cmd settings put` to actually apply rotation.
+    std::thread::sleep(std::time::Duration::from_secs(5));
+
     // Step 9: Apply rotation AFTER UI is available.
     // The original waydroid script applies rotation after show-full-ui.
-    // This is the correct order — the display must be active for rotation
-    // settings to take effect in the compositor.
+    // The display must be active for rotation settings to take effect.
     emit_progress("ApplyingRotation", "Disabling auto-rotation", false);
     if let Err(e) = backend.shell_command(&[
         "cmd", "settings", "put", "system", "accelerometer_rotation", "0",
