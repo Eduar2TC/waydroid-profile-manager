@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../../domain/entities/profile.dart';
@@ -17,6 +19,8 @@ class AppController extends ChangeNotifier {
   bool _isApplying = false;
   String? _error;
   List<String> _logs = [];
+  ApplyProgress? _applyProgress;
+  Timer? _progressTimer;
 
   AppController(this._service);
 
@@ -26,6 +30,7 @@ class AppController extends ChangeNotifier {
   Profile? get activeProfile => _activeProfile;
   WaydroidOrientation get selectedOrientation => _selectedOrientation;
   bool get isApplying => _isApplying;
+  ApplyProgress? get applyProgress => _applyProgress;
   String? get error => _error;
   List<String> get logs => List.unmodifiable(_logs);
   bool get isReady => _waydroidStatus.installed;
@@ -61,40 +66,91 @@ class AppController extends ChangeNotifier {
   }
 
   /// Apply a profile to Waydroid.
+  /// Uses async FFI with progress polling for a responsive UI.
   Future<void> applyProfile(Profile profile) async {
     if (_isApplying) return;
 
     _isApplying = true;
     _error = null;
+    _applyProgress = null;
     _addLog('Applying profile: ${profile.name}');
     _addLog('Orientation: ${_selectedOrientation.displayName}');
     notifyListeners();
 
-    try {
-      final dims = profile.getActualDimensions(_selectedOrientation);
-      _addLog('Resolution: ${dims[0]}×${dims[1]}, Density: ${profile.density}');
+    final dims = profile.getActualDimensions(_selectedOrientation);
+    _addLog('Resolution: ${dims[0]}×${dims[1]}, Density: ${profile.density}');
 
-      final result = _service.applyProfile(
-        profile.id,
-        _selectedOrientation.apiKey,
-      );
+    // Try async apply with progress polling
+    final started = _service.applyProfileAsync(
+      profile.id,
+      _selectedOrientation.apiKey,
+    );
 
-      final success = result['success'] as bool? ?? false;
+    if (started) {
+      // Poll for progress until done
+      final completer = Completer<Map<String, dynamic>>();
+      _progressTimer = Timer.periodic(const Duration(milliseconds: 300), (timer) {
+        final progress = _service.getApplyProgress();
+        if (progress != null) {
+          _applyProgress = progress;
+          _addLog('${progress.step}: ${progress.message}');
+          notifyListeners();
+        }
 
-      if (success) {
-        _activeProfile = profile;
-        _addLog('✓ Profile applied successfully');
-      } else {
-        _error = result['message'] as String? ?? 'Failed to apply profile';
-        _addLog('✗ ${_error}');
+        if (_service.isApplyDone()) {
+          timer.cancel();
+          _progressTimer = null;
+          final finalProgress = _service.getApplyProgress();
+          final success = finalProgress?.success ?? false;
+          final message = finalProgress?.message ?? 'Unknown result';
+          completer.complete({
+            'success': success,
+            'message': message,
+          });
+        }
+      });
+
+      try {
+        final result = await completer.future;
+        final success = result['success'] as bool? ?? false;
+
+        if (success) {
+          _activeProfile = profile;
+          _addLog('✓ Profile applied successfully');
+        } else {
+          _error = result['message'] as String? ?? 'Failed to apply profile';
+          _addLog('✗ ${_error}');
+        }
+      } catch (e) {
+        _error = e.toString();
+        _addLog('✗ Error: $e');
       }
-    } catch (e) {
-      _error = e.toString();
-      _addLog('✗ Error: $e');
-    } finally {
-      _isApplying = false;
-      notifyListeners();
+    } else {
+      // Fallback to sync apply
+      try {
+        final result = _service.applyProfile(
+          profile.id,
+          _selectedOrientation.apiKey,
+        );
+
+        final success = result['success'] as bool? ?? false;
+
+        if (success) {
+          _activeProfile = profile;
+          _addLog('✓ Profile applied successfully');
+        } else {
+          _error = result['message'] as String? ?? 'Failed to apply profile';
+          _addLog('✗ ${_error}');
+        }
+      } catch (e) {
+        _error = e.toString();
+        _addLog('✗ Error: $e');
+      }
     }
+
+    _isApplying = false;
+    _applyProgress = null;
+    notifyListeners();
   }
 
   /// Create a new profile.

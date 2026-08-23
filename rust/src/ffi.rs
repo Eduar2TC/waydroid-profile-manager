@@ -1,12 +1,17 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use crate::bridge::api::WaydroidManager;
 use crate::domain::orientation::Orientation;
+use crate::domain::waydroid_status::OperationProgress;
 
 /// Global manager instance (singleton).
 static MANAGER: Mutex<Option<WaydroidManager>> = Mutex::new(None);
+
+/// Global apply state: latest progress + whether apply is still running.
+static APPLY_PROGRESS: Mutex<Option<String>> = Mutex::new(None);
+static APPLY_RUNNING: Mutex<bool> = Mutex::new(false);
 
 /// Initialize the Waydroid manager.
 /// Returns 0 on success, -1 on error.
@@ -197,6 +202,151 @@ pub extern "C" fn wpm_apply_profile(profile_id: *const c_char, orientation: *con
         "message": result.message,
     });
     c_string(&json.to_string())
+}
+
+/// Apply a profile asynchronously (non-blocking).
+/// Progress can be polled via wpm_get_apply_progress().
+/// Check wpm_is_apply_done() to know when it's finished.
+/// Returns 0 on success (started), -1 on error.
+#[no_mangle]
+pub extern "C" fn wpm_apply_profile_async(
+    profile_id: *const c_char,
+    orientation: *const c_char,
+) -> i32 {
+    let profile_id = unsafe { cstr_to_string(profile_id) };
+    let orientation = unsafe { cstr_to_string(orientation) };
+
+    let orient = match orientation.as_str() {
+        "landscape" => Orientation::Landscape,
+        _ => Orientation::Portrait,
+    };
+
+    // Check if already running
+    {
+        let mut running = match APPLY_RUNNING.lock() {
+            Ok(r) => r,
+            Err(_) => return -1,
+        };
+        if *running {
+            return -1; // Already applying
+        }
+        *running = true;
+    }
+
+    // Clear previous progress
+    {
+        if let Ok(mut p) = APPLY_PROGRESS.lock() {
+            *p = Some(
+                serde_json::json!({
+                    "step": "Starting",
+                    "message": "Starting apply operation",
+                    "completed": false,
+                    "done": false,
+                    "success": false,
+                })
+                .to_string(),
+            );
+        }
+    }
+
+    // Spawn a thread to do the work
+    std::thread::spawn(move || {
+        let progress_store: Arc<Mutex<Option<OperationProgress>>> =
+            Arc::new(Mutex::new(None));
+        let progress_clone = progress_store.clone();
+
+        let callback = Arc::new(Mutex::new(move |progress: OperationProgress| {
+            *progress_clone.lock().unwrap() = Some(progress);
+        })) as Arc<Mutex<dyn FnMut(OperationProgress) + Send>>;
+
+        let result = {
+            let manager = match MANAGER.lock() {
+                Ok(m) => m,
+                Err(_) => {
+                    set_apply_result(false, "Manager lock failed", true);
+                    return;
+                }
+            };
+
+            let mgr = match manager.as_ref() {
+                Some(m) => m,
+                None => {
+                    set_apply_result(false, "Manager not initialized", true);
+                    return;
+                }
+            };
+
+            mgr.apply_profile_with_progress(profile_id, orient, callback)
+        };
+
+        // Drain any final progress
+        if let Some(p) = progress_store.lock().unwrap().take() {
+            set_progress(&p);
+        }
+
+        set_apply_result(result.success, &result.message, true);
+    });
+
+    0
+}
+
+/// Get the latest apply progress as JSON.
+/// Returns null if no apply has been started.
+/// JSON shape: {"step": string, "message": string, "completed": bool, "done": bool, "success": bool}
+#[no_mangle]
+pub extern "C" fn wpm_get_apply_progress() -> *mut c_char {
+    let p = match APPLY_PROGRESS.lock() {
+        Ok(p) => p,
+        Err(_) => return c_string(""),
+    };
+    match p.as_ref() {
+        Some(json_str) => c_string(json_str),
+        None => c_string(""),
+    }
+}
+
+/// Check if the async apply operation is done.
+/// Returns 1 if done, 0 if still running, -1 on error.
+#[no_mangle]
+pub extern "C" fn wpm_is_apply_done() -> i32 {
+    let running = match APPLY_RUNNING.lock() {
+        Ok(r) => r,
+        Err(_) => return -1,
+    };
+    if *running { 0 } else { 1 }
+}
+
+fn set_progress(progress: &OperationProgress) {
+    if let Ok(mut p) = APPLY_PROGRESS.lock() {
+        let running = APPLY_RUNNING
+            .lock()
+            .map(|r| *r)
+            .unwrap_or(false);
+        let json = serde_json::json!({
+            "step": progress.step,
+            "message": progress.message,
+            "completed": progress.completed,
+            "done": !running,
+            "success": false,
+        });
+        *p = Some(json.to_string());
+    }
+}
+
+fn set_apply_result(success: bool, message: &str, done: bool) {
+    if let Ok(mut p) = APPLY_PROGRESS.lock() {
+        let json = serde_json::json!({
+            "step": if success { "Completed" } else { "Error" },
+            "message": message,
+            "completed": true,
+            "done": done,
+            "success": success,
+        });
+        *p = Some(json.to_string());
+    }
+    if let Ok(mut r) = APPLY_RUNNING.lock() {
+        *r = false;
+    }
 }
 
 /// Reset Waydroid configuration.

@@ -21,6 +21,9 @@ class WaydroidBridge {
   late final Pointer<Utf8> Function(
       Pointer<Utf8>, Pointer<Utf8>) _duplicateProfile;
   late final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>) _applyProfile;
+  late final int Function(Pointer<Utf8>, Pointer<Utf8>) _applyProfileAsync;
+  late final Pointer<Utf8> Function() _getApplyProgress;
+  late final int Function() _isApplyDone;
   late final int Function() _reset;
   late final void Function(Pointer<Utf8>) _freeString;
 
@@ -54,6 +57,15 @@ class WaydroidBridge {
           Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>),
           Pointer<Utf8> Function(
               Pointer<Utf8>, Pointer<Utf8>)>('wpm_apply_profile');
+      _applyProfileAsync = _lib.lookupFunction<
+          Int32 Function(Pointer<Utf8>, Pointer<Utf8>),
+          int Function(
+              Pointer<Utf8>, Pointer<Utf8>)>('wpm_apply_profile_async');
+      _getApplyProgress = _lib.lookupFunction<
+          Pointer<Utf8> Function(),
+          Pointer<Utf8> Function()>('wpm_get_apply_progress');
+      _isApplyDone = _lib.lookupFunction<
+          Int32 Function(), int Function()>('wpm_is_apply_done');
       _reset = _lib.lookupFunction<Int32 Function(), int Function()>(
           'wpm_reset');
       _freeString = _lib.lookupFunction<Void Function(Pointer<Utf8>),
@@ -243,6 +255,46 @@ class WaydroidBridge {
     } catch (e) {
       return ApplyResultData(success: false, message: 'Error: $e');
     }
+  }
+
+  /// Start an async apply operation. Returns true if started successfully.
+  /// Poll [getApplyProgress] to track progress.
+  bool applyProfileAsync(String profileId, String orientation) {
+    if (!_available) return false;
+    try {
+      final idPtr = profileId.toNativeUtf8();
+      final orientPtr = orientation.toNativeUtf8();
+      try {
+        return _applyProfileAsync(idPtr, orientPtr) == 0;
+      } finally {
+        calloc.free(idPtr);
+        calloc.free(orientPtr);
+      }
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Get the latest apply progress as JSON.
+  /// Returns null if no apply has been started.
+  Map<String, dynamic>? getApplyProgress() {
+    if (!_available) return null;
+    final json = _callString(_getApplyProgress);
+    if (json.isEmpty) return null;
+    try {
+      return jsonDecode(json) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Check if the async apply is done.
+  /// Returns true if done, false if still running, null on error.
+  bool? isApplyDone() {
+    if (!_available) return null;
+    final result = _isApplyDone();
+    if (result < 0) return null;
+    return result == 1;
   }
 
   bool reset() {

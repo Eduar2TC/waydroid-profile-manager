@@ -180,37 +180,21 @@ pub fn apply_profile(
             error: Some("Timeout".to_string()),
         };
     }
-    emit_progress("OpeningUi", "UI opened", true);
-
-    // Wait for the platform service and settings provider to settle
+    emit_progress("OpeningUi", "UI opened", true);    // Wait for the platform service and settings provider to settle
     // after UI creation. The settings provider must be ready for
     // `cmd settings put` to actually apply rotation.
-    std::thread::sleep(std::time::Duration::from_secs(5));
+    std::thread::sleep(std::time::Duration::from_secs(3));
 
-    // Step 9: Apply display resolution and rotation AFTER UI is available.
+    // Step 9: Apply rotation AFTER UI is available.
     //
-    // persist.waydroid.* props control the HOST window size at session start.
-    // But the internal Android display resolution must also be set via wm size
-    // to match. The key insight: wm size must be set to PORTRAIT dimensions
-    // because user_rotation=1 rotates the display 90°.
+    // persist.waydroid.width/height already set BOTH the host window size AND
+    // the internal Android display resolution at session start. Using `wm size`
+    // on top of that creates a conflict — it overrides the internal resolution,
+    // causing black borders when the rotation doesn't match the overridden size.
     //
-    // For Portrait: wm size {width}x{height} (already portrait dims)
-    // For Landscape: wm size {height}x{width} (swap to portrait, then rotate)
-    let (wm_w, wm_h) = match orientation {
-        Orientation::Portrait => (config.width, config.height),
-        Orientation::Landscape => (config.height, config.width),
-    };
-    let wm_size_str = format!("{}x{}", wm_w, wm_h);
-    emit_progress("ApplyingDisplay", &format!("Setting display {}", wm_size_str), false);
-    if let Err(e) = backend.shell_command(&["wm", "size", &wm_size_str]) {
-        log::warn!("Failed to set wm size: {}", e);
-    }
-    let density_str = config.density.to_string();
-    if let Err(e) = backend.shell_command(&["wm", "density", &density_str]) {
-        log::warn!("Failed to set wm density: {}", e);
-    }
-    emit_progress("ApplyingDisplay", "Display configured", true);
-
+    // The correct approach: let the props handle the resolution, and only use
+    // user_rotation to control the orientation. The window and internal display
+    // are already the correct size from the props.
     emit_progress("ApplyingRotation", "Disabling auto-rotation", false);
     if let Err(e) = backend.shell_command(&[
         "cmd", "settings", "put", "system", "accelerometer_rotation", "0",

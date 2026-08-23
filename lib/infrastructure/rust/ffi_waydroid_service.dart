@@ -2,6 +2,7 @@ import '../../domain/entities/profile.dart';
 import '../../domain/entities/waydroid_status.dart';
 import 'waydroid_bridge.dart';
 import 'waydroid_service.dart';
+// ApplyProgress is defined in waydroid_service.dart
 
 /// Real Waydroid service backed by the Rust FFI library.
 /// Falls back gracefully if the .so isn't available.
@@ -108,6 +109,26 @@ class FfiWaydroidService implements WaydroidService {
       'success': result.success,
       'message': result.message,
     };
+  }
+
+  @override
+  bool applyProfileAsync(String profileId, String orientation) {
+    if (!isAvailable) return false;
+    return _bridge.applyProfileAsync(profileId, orientation);
+  }
+
+  @override
+  ApplyProgress? getApplyProgress() {
+    if (!isAvailable) return null;
+    final json = _bridge.getApplyProgress();
+    if (json == null) return null;
+    return ApplyProgress.fromJson(json);
+  }
+
+  @override
+  bool isApplyDone() {
+    if (!isAvailable) return true;
+    return _bridge.isApplyDone() ?? true;
   }
 
   @override

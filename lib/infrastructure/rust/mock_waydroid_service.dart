@@ -187,6 +187,30 @@ class MockWaydroidService implements WaydroidService {
     return {'success': true, 'message': 'Applied'};
   }
 
+  bool _mockAsyncDone = true;
+  ApplyProgress? _mockProgress;
+
+  @override
+  bool applyProfileAsync(String profileId, String orientation) {
+    // Mock: apply synchronously, set progress to completed
+    final result = applyProfile(profileId, orientation);
+    _mockProgress = ApplyProgress(
+      step: 'Completed',
+      message: result['message'] as String? ?? 'Applied',
+      completed: true,
+      done: true,
+      success: result['success'] as bool? ?? false,
+    );
+    _mockAsyncDone = true;
+    return true;
+  }
+
+  @override
+  ApplyProgress? getApplyProgress() => _mockProgress;
+
+  @override
+  bool isApplyDone() => _mockAsyncDone;
+
   @override
   bool reset() {
     _activeProfile = null;
