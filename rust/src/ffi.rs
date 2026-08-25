@@ -124,6 +124,52 @@ pub extern "C" fn wpm_create_profile(
     }
 }
 
+/// Update an existing profile by ID.
+/// Returns 0 on success, -1 on error.
+#[no_mangle]
+pub extern "C" fn wpm_update_profile(
+    id: *const c_char,
+    name: *const c_char,
+    description: *const c_char,
+    base_width: u32,
+    base_height: u32,
+    density: u32,
+    orientation: *const c_char,
+) -> i32 {
+    let id = unsafe { cstr_to_string(id) };
+    let name = unsafe { optional_cstr(name) };
+    let description = unsafe { optional_cstr(description) };
+    let orientation = unsafe { cstr_to_string(orientation) };
+
+    let orient = match orientation.as_str() {
+        "landscape" => Orientation::Landscape,
+        _ => Orientation::Portrait,
+    };
+
+    let mut manager = match MANAGER.lock() {
+        Ok(m) => m,
+        Err(_) => return -1,
+    };
+
+    let mgr = match manager.as_mut() {
+        Some(m) => m,
+        None => return -1,
+    };
+
+    match mgr.update_profile(
+        id,
+        name,
+        Some(description),
+        Some(base_width),
+        Some(base_height),
+        Some(density),
+        Some(orient),
+    ) {
+        Ok(_) => 0,
+        Err(_) => -1,
+    }
+}
+
 /// Delete a profile by ID.
 /// Returns 0 on success, -1 on error.
 #[no_mangle]

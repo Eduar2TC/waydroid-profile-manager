@@ -189,24 +189,39 @@ class AppController extends ChangeNotifier {
     int? density,
     WaydroidOrientation? orientation,
   }) {
-    // Find and update locally, then recreate via service
     final idx = _profiles.indexWhere((p) => p.id == id);
     if (idx == -1) return false;
 
     final old = _profiles[idx];
     if (old.builtin) return false;
 
-    // Delete old and create new with same id approach
-    // For now, just update the local state
-    _profiles[idx] = old.copyWith(
+    // Persist to Rust backend
+    final success = _service.updateProfile(
+      id: id,
       name: name,
       description: description,
-      baseWidth: baseWidth,
-      baseHeight: baseHeight,
-      density: density,
-      defaultOrientation: orientation,
+      baseWidth: baseWidth ?? old.baseWidth,
+      baseHeight: baseHeight ?? old.baseHeight,
+      density: density ?? old.density,
+      orientation: (orientation ?? old.defaultOrientation).apiKey,
     );
-    _addLog('Updated profile: ${_profiles[idx].name}');
+
+    if (success) {
+      // Reload from service to get the persisted data
+      _profiles = _service.getProfiles();
+      _addLog('Updated profile: ${_profiles[idx].name}');
+    } else {
+      // Fallback to local update
+      _profiles[idx] = old.copyWith(
+        name: name,
+        description: description,
+        baseWidth: baseWidth,
+        baseHeight: baseHeight,
+        density: density,
+        defaultOrientation: orientation,
+      );
+      _addLog('Updated profile locally: ${_profiles[idx].name}');
+    }
     notifyListeners();
     return true;
   }

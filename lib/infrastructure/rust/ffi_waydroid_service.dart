@@ -82,6 +82,28 @@ class FfiWaydroidService implements WaydroidService {
   }
 
   @override
+  bool updateProfile({
+    required String id,
+    String? name,
+    String? description,
+    required int baseWidth,
+    required int baseHeight,
+    required int density,
+    required String orientation,
+  }) {
+    if (!isAvailable) return false;
+    return _bridge.updateProfile(
+      id: id,
+      name: name,
+      description: description,
+      baseWidth: baseWidth,
+      baseHeight: baseHeight,
+      density: density,
+      orientation: orientation,
+    );
+  }
+
+  @override
   bool deleteProfile(String id) {
     if (!isAvailable) return false;
     return _bridge.deleteProfile(id);

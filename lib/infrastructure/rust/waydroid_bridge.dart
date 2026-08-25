@@ -17,6 +17,8 @@ class WaydroidBridge {
   late final Pointer<Utf8> Function() _getActiveProfile;
   late final int Function(Pointer<Utf8>, Pointer<Utf8>, int, int, int,
       Pointer<Utf8>) _createProfile;
+  late final int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, int, int, int,
+      Pointer<Utf8>) _updateProfile;
   late final int Function(Pointer<Utf8>) _deleteProfile;
   late final Pointer<Utf8> Function(
       Pointer<Utf8>, Pointer<Utf8>) _duplicateProfile;
@@ -46,6 +48,11 @@ class WaydroidBridge {
               Pointer<Utf8>),
           int Function(Pointer<Utf8>, Pointer<Utf8>, int, int, int,
               Pointer<Utf8>)>('wpm_create_profile');
+      _updateProfile = _lib.lookupFunction<
+          Int32 Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Int32, Int32, Int32,
+              Pointer<Utf8>),
+          int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, int, int, int,
+              Pointer<Utf8>)>('wpm_update_profile');
       _deleteProfile = _lib.lookupFunction<
           Int32 Function(Pointer<Utf8>),
           int Function(Pointer<Utf8>)>('wpm_delete_profile');
@@ -184,6 +191,36 @@ class WaydroidBridge {
                 namePtr, descPtr, baseWidth, baseHeight, density, orientPtr) ==
             0;
       } finally {
+        calloc.free(namePtr);
+        calloc.free(descPtr);
+        calloc.free(orientPtr);
+      }
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool updateProfile({
+    required String id,
+    String? name,
+    String? description,
+    required int baseWidth,
+    required int baseHeight,
+    required int density,
+    required String orientation,
+  }) {
+    if (!_available) return false;
+    try {
+      final idPtr = id.toNativeUtf8();
+      final namePtr = (name ?? '').toNativeUtf8();
+      final descPtr = (description ?? '').toNativeUtf8();
+      final orientPtr = orientation.toNativeUtf8();
+      try {
+        return _updateProfile(
+                idPtr, namePtr, descPtr, baseWidth, baseHeight, density, orientPtr) ==
+            0;
+      } finally {
+        calloc.free(idPtr);
         calloc.free(namePtr);
         calloc.free(descPtr);
         calloc.free(orientPtr);

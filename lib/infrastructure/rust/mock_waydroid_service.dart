@@ -145,6 +145,30 @@ class MockWaydroidService implements WaydroidService {
   }
 
   @override
+  bool updateProfile({
+    required String id,
+    String? name,
+    String? description,
+    required int baseWidth,
+    required int baseHeight,
+    required int density,
+    required String orientation,
+  }) {
+    final idx = _profiles.indexWhere((p) => p.id == id);
+    if (idx == -1) return false;
+    if (_profiles[idx].builtin) return false;
+    _profiles[idx] = _profiles[idx].copyWith(
+      name: name,
+      description: description,
+      baseWidth: baseWidth,
+      baseHeight: baseHeight,
+      density: density,
+      defaultOrientation: WaydroidOrientation.fromString(orientation),
+    );
+    return true;
+  }
+
+  @override
   bool deleteProfile(String id) {
     final idx = _profiles.indexWhere((p) => p.id == id);
     if (idx == -1) return false;

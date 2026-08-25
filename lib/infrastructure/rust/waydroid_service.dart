@@ -44,6 +44,15 @@ abstract class WaydroidService {
     required int density,
     required String orientation,
   });
+  bool updateProfile({
+    required String id,
+    String? name,
+    String? description,
+    required int baseWidth,
+    required int baseHeight,
+    required int density,
+    required String orientation,
+  });
   bool deleteProfile(String id);
   Profile? duplicateProfile(String id, {String? newName});
   /// Apply a profile (auto-restarts session for resolution changes).
