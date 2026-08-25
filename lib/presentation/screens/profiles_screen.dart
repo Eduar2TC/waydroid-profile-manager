@@ -95,7 +95,7 @@ class ProfilesScreen extends StatelessWidget {
   }
 
   Future<void> _createProfile(BuildContext context, AppController controller) async {
-    final result = await showDialog<Profile>(
+    final result = await showDialog<ProfileEditorResult>(
       context: context,
       builder: (ctx) => const ProfileEditorDialog(),
     );
@@ -180,7 +180,7 @@ class ProfilesScreen extends StatelessWidget {
     AppController controller,
     Profile profile,
   ) async {
-    final result = await showDialog<Profile>(
+    final result = await showDialog<ProfileEditorResult>(
       context: context,
       builder: (ctx) => ProfileEditorDialog(profile: profile),
     );
