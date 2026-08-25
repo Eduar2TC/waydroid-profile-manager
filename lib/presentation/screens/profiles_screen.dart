@@ -39,9 +39,15 @@ class ProfilesScreen extends StatelessWidget {
               ),
             ],
           ),
-          body: controller.profiles.isEmpty
-              ? _buildEmptyState(context)
-              : _buildProfileList(context, controller),
+          body: Stack(
+            children: [
+              controller.profiles.isEmpty
+                  ? _buildEmptyState(context)
+                  : _buildProfileList(context, controller),
+              if (controller.isApplying)
+                _ApplyProgressOverlay(controller: controller),
+            ],
+          ),
         );
       },
     );
@@ -326,6 +332,75 @@ class ProfilesScreen extends StatelessWidget {
             child: const Text('Import'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Full-screen overlay shown while a profile is being applied.
+class _ApplyProgressOverlay extends StatelessWidget {
+  final AppController controller;
+
+  const _ApplyProgressOverlay({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = controller.applyProgress;
+    final step = progress?.step ?? 'Starting...';
+    final message = progress?.message ?? 'Preparing to apply profile';
+
+    return Positioned.fill(
+      child: Material(
+        color: Colors.black54,
+        child: Center(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 360),
+            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 56,
+                  height: 56,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 4,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  step,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  message,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                      ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'This may take up to 60 seconds\nwhile Waydroid restarts',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
+                      ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
