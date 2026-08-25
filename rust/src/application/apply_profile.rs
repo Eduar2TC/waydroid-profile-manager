@@ -180,21 +180,45 @@ pub fn apply_profile(
             error: Some("Timeout".to_string()),
         };
     }
-    emit_progress("OpeningUi", "UI opened", true);    // Wait for the platform service and settings provider to settle
+    emit_progress("OpeningUi", "UI opened", true);
+
+    // Wait for the platform service and settings provider to settle
     // after UI creation. The settings provider must be ready for
     // `cmd settings put` to actually apply rotation.
     std::thread::sleep(std::time::Duration::from_secs(3));
 
-    // Step 9: Apply rotation AFTER UI is available.
+    // Step 9: Apply internal Android display resolution via wm size.
     //
-    // persist.waydroid.width/height already set BOTH the host window size AND
-    // the internal Android display resolution at session start. Using `wm size`
-    // on top of that creates a conflict — it overrides the internal resolution,
-    // causing black borders when the rotation doesn't match the overridden size.
+    // persist.waydroid.width/height only controls the HOST window size,
+    // not the internal Android display resolution. We need wm size to make
+    // Android render at the correct resolution so the content fills the window.
     //
-    // The correct approach: let the props handle the resolution, and only use
-    // user_rotation to control the orientation. The window and internal display
-    // are already the correct size from the props.
+    // Always use portrait dimensions for wm size — when user_rotation=1,
+    // Android rotates the display 90°, so a portrait wm size becomes landscape.
+    let wm_w = std::cmp::min(config.width, config.height);
+    let wm_h = std::cmp::max(config.width, config.height);
+    emit_progress("ApplyingDisplay", "Setting display resolution", false);
+    if let Err(e) = backend.shell_command(&["wm", "size", "reset"]) {
+        eprintln!("wm size reset failed (non-fatal): {}", e);
+    }
+    std::thread::sleep(std::time::Duration::from_secs(1));
+    if let Err(e) = backend.shell_command(&[
+        "wm", "size",
+        &format!("{}x{}", wm_w, wm_h),
+    ]) {
+        eprintln!("wm size failed (non-fatal): {}", e);
+    }
+    if let Err(e) = backend.shell_command(&["wm", "density", "reset"]) {
+        eprintln!("wm density reset failed (non-fatal): {}", e);
+    }
+    std::thread::sleep(std::time::Duration::from_secs(1));
+    if let Err(e) = backend.shell_command(&["wm", "density", &config.density.to_string()]) {
+        eprintln!("wm density failed (non-fatal): {}", e);
+    }
+    emit_progress("ApplyingDisplay", "Display resolution applied", true);
+    std::thread::sleep(std::time::Duration::from_secs(2));
+
+    // Step 10: Apply rotation AFTER UI is available and display resolution is set.
     emit_progress("ApplyingRotation", "Disabling auto-rotation", false);
     if let Err(e) = backend.shell_command(&[
         "cmd", "settings", "put", "system", "accelerometer_rotation", "0",
@@ -219,7 +243,7 @@ pub fn apply_profile(
     }
     emit_progress("ApplyingRotation", "Rotation applied", true);
 
-    // Step 10: Verify
+    // Step 11: Verify
     emit_progress("Verifying", "Verifying configuration", false);
     if backend.get_session_status() != SessionStatus::Running {
         emit_progress("Verifying", "Warning: session not running", true);
