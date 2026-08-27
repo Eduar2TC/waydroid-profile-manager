@@ -7,6 +7,10 @@
 
 #include "flutter/generated_plugin_registrant.h"
 
+// Custom CSS to increase window corner radius
+static const char* css_style =
+    "decoration { border-radius: 50px 50px 50px 50px; }";
+
 struct _MyApplication {
   GtkApplication parent_instance;
   char** dart_entrypoint_arguments;
@@ -54,26 +58,44 @@ static void my_application_activate(GApplication* application) {
 
   gtk_window_set_default_size(window, 500, 700);
 
+  // Enforce minimum and maximum window size at the WM level.
+  GdkGeometry hints;
+  hints.min_width = 400;
+  hints.min_height = 500;
+  hints.max_width = 500;
+  hints.max_height = 700;
+  gtk_window_set_geometry_hints(window, nullptr, &hints,
+      static_cast<GdkWindowHints>(GDK_HINT_MIN_SIZE | GDK_HINT_MAX_SIZE));
+
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(
       project, self->dart_entrypoint_arguments);
 
   FlView* view = fl_view_new(project);
   GdkRGBA background_color;
-  // Background defaults to black, override it here if necessary, e.g. #00000000
-  // for transparent.
-  gdk_rgba_parse(&background_color, "#000000");
+  gdk_rgba_parse(&background_color, "#1C1B1F");
   fl_view_set_background_color(view, &background_color);
-  gtk_widget_show(GTK_WIDGET(view));
   gtk_container_add(GTK_CONTAINER(window), GTK_WIDGET(view));
+
+  // Apply custom CSS for larger corner radius.
+  GtkCssProvider* css_provider = gtk_css_provider_new();
+  gtk_css_provider_load_from_data(css_provider, css_style, -1, nullptr);
+  gtk_style_context_add_provider_for_screen(
+      gtk_window_get_screen(window),
+      GTK_STYLE_PROVIDER(css_provider),
+      GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+  g_object_unref(css_provider);
+
+  // Register plugins before showing the view (required by handy_window).
+  fl_register_plugins(FL_PLUGIN_REGISTRY(view));
+
+  gtk_widget_show(GTK_WIDGET(view));
 
   // Show the window when Flutter renders.
   // Requires the view to be realized so we can start rendering.
   g_signal_connect_swapped(view, "first-frame", G_CALLBACK(first_frame_cb),
                            self);
   gtk_widget_realize(GTK_WIDGET(view));
-
-  fl_register_plugins(FL_PLUGIN_REGISTRY(view));
 
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }
