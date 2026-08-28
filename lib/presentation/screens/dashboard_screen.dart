@@ -124,27 +124,23 @@ import '../widgets/status_indicator.dart';class DashboardScreen extends Stateles
 
         return Column(
           children: rows.map((row) {
-            final placeholders = cols - row.length;
             return Padding(
               padding: const EdgeInsets.only(bottom: spacing),
               child: Row(
-                children: [
-                  ...row.map((profile) {
-                    return Expanded(
-                      child: ActionChip(
-                        avatar: Icon(profile.builtin ? Icons.star : Icons.star_border, size: 16, color: profile.builtin ? Colors.amber : Colors.white54),
-                        label: Text(profile.name, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis, maxLines: 1),
-                        onPressed: controller.isApplying
-                            ? null
-                            : () {
-                                controller.setOrientation(profile.defaultOrientation);
-                                controller.applyProfile(profile);
-                              },
-                      ),
-                    );
-                  }),
-                  for (var i = 0; i < placeholders; i++) const Expanded(child: SizedBox()),
-                ],
+                children: row.map((profile) {
+                  return Expanded(
+                    child: ActionChip(
+                      avatar: Icon(profile.builtin ? Icons.star : Icons.star_border, size: 16, color: profile.builtin ? Colors.amber : Colors.white54),
+                      label: Text(profile.name, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis, maxLines: 1),
+                      onPressed: controller.isApplying
+                          ? null
+                          : () {
+                              controller.setOrientation(profile.defaultOrientation);
+                              controller.applyProfile(profile);
+                            },
+                    ),
+                  );
+                }).toList(),
               ),
             );
           }).toList(),
