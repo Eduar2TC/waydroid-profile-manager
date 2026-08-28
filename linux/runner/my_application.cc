@@ -7,9 +7,22 @@
 
 #include "flutter/generated_plugin_registrant.h"
 
-// Custom CSS to increase window corner radius
+// `decoration`/`decoration:backdrop` round the window's outer frame/shadow.
+// `window.background` rounds the actual painted background behind the
+// content and gives it the app's real background color — this is the node
+// that must be rounded for the corners to look right where FlView (which
+// renders via its own GL surface and does NOT respect Flutter-side clips
+// for its base fill) shows through.
 static const char* css_style =
-    "decoration { border-radius: 50px 50px 50px 50px; }";
+    "decoration, decoration:backdrop {"
+    "  border-radius: 12px;"
+    "  box-shadow: none;"
+    "  border: none;"
+    "}"
+    "window.background {"
+    "  border-radius: 12px;"
+    "  background-color: #1C1B1F;"
+    "}";
 
 struct _MyApplication {
   GtkApplication parent_instance;
@@ -29,36 +42,16 @@ static void my_application_activate(GApplication* application) {
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
 
-  // Use a header bar when running in GNOME as this is the common style used
-  // by applications and is the setup most users will be using (e.g. Ubuntu
-  // desktop).
-  // If running on X and not using GNOME then just use a traditional title bar
-  // in case the window manager does more exotic layout, e.g. tiling.
-  // If running on Wayland assume the header bar will work (may need changing
-  // if future cases occur).
-  gboolean use_header_bar = TRUE;
-#ifdef GDK_WINDOWING_X11
-  GdkScreen* screen = gtk_window_get_screen(window);
-  if (GDK_IS_X11_SCREEN(screen)) {
-    const gchar* wm_name = gdk_x11_screen_get_window_manager_name(screen);
-    if (g_strcmp0(wm_name, "GNOME Shell") != 0) {
-      use_header_bar = FALSE;
-    }
-  }
-#endif
-  if (use_header_bar) {
-    GtkHeaderBar* header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
-    gtk_widget_show(GTK_WIDGET(header_bar));
-    gtk_header_bar_set_title(header_bar, "waydroid_profile_manager");
-    gtk_header_bar_set_show_close_button(header_bar, TRUE);
-    gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
-  } else {
-    gtk_window_set_title(window, "waydroid_profile_manager");
-  }
+  // Force CSD (header bar) unconditionally so the custom `decoration`
+  // CSS (rounded corners) always applies, regardless of window manager.
+  GtkHeaderBar* header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
+  gtk_widget_show(GTK_WIDGET(header_bar));
+  gtk_header_bar_set_title(header_bar, "waydroid_profile_manager");
+  gtk_header_bar_set_show_close_button(header_bar, TRUE);
+  gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
 
   gtk_window_set_default_size(window, 500, 700);
 
-  // Enforce minimum and maximum window size at the WM level.
   GdkGeometry hints;
   hints.min_width = 400;
   hints.min_height = 500;
@@ -67,32 +60,57 @@ static void my_application_activate(GApplication* application) {
   gtk_window_set_geometry_hints(window, nullptr, &hints,
       static_cast<GdkWindowHints>(GDK_HINT_MIN_SIZE | GDK_HINT_MAX_SIZE));
 
+  GdkScreen* screen = gtk_window_get_screen(window);
+
+  // RGBA visual so the corners GTK leaves unpainted (outside the rounded
+  // `window.background`) are truly transparent, not solid black.
+  gboolean have_compositor = gdk_screen_is_composited(screen);
+  if (have_compositor) {
+    GdkVisual* visual = gdk_screen_get_rgba_visual(screen);
+    if (visual != nullptr) {
+      gtk_widget_set_visual(GTK_WIDGET(window), visual);
+    } else {
+      have_compositor = FALSE;
+      g_warning("RGBA visual unavailable; rounded corners will not render "
+                "correctly on this display.");
+    }
+  } else {
+    g_warning("No compositor detected; skipping RGBA visual. Rounded "
+              "corners require a running compositor.");
+  }
+
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(
       project, self->dart_entrypoint_arguments);
 
   FlView* view = fl_view_new(project);
-  GdkRGBA background_color;
-  gdk_rgba_parse(&background_color, "#1C1B1F");
-  fl_view_set_background_color(view, &background_color);
+
+  // IMPORTANT: transparent background on FlView itself. FlView renders via
+  // its own GL/EGL surface, which is NOT clipped by Flutter-side widgets
+  // like ClipRRect (that only affects what Flutter paints, not FlView's
+  // base fill) and is NOT clipped by GTK CSS either (it isn't a normal
+  // cairo-drawn widget). If this stays opaque, it paints a full rectangle
+  // that covers any rounding you do elsewhere — which is exactly the
+  // square-corner artifact you were seeing. The real background color now
+  // lives on `window.background` in the CSS above, which IS a normal
+  // cairo-drawn, CSS-clippable node.
+  GdkRGBA transparent = {0.0, 0.0, 0.0, 0.0};
+  fl_view_set_background_color(view, &transparent);
+
   gtk_container_add(GTK_CONTAINER(window), GTK_WIDGET(view));
 
-  // Apply custom CSS for larger corner radius.
   GtkCssProvider* css_provider = gtk_css_provider_new();
   gtk_css_provider_load_from_data(css_provider, css_style, -1, nullptr);
   gtk_style_context_add_provider_for_screen(
-      gtk_window_get_screen(window),
+      screen,
       GTK_STYLE_PROVIDER(css_provider),
-      GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+      GTK_STYLE_PROVIDER_PRIORITY_USER);
   g_object_unref(css_provider);
 
-  // Register plugins before showing the view (required by handy_window).
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
 
   gtk_widget_show(GTK_WIDGET(view));
 
-  // Show the window when Flutter renders.
-  // Requires the view to be realized so we can start rendering.
   g_signal_connect_swapped(view, "first-frame", G_CALLBACK(first_frame_cb),
                            self);
   gtk_widget_realize(GTK_WIDGET(view));
@@ -105,7 +123,6 @@ static gboolean my_application_local_command_line(GApplication* application,
                                                   gchar*** arguments,
                                                   int* exit_status) {
   MyApplication* self = MY_APPLICATION(application);
-  // Strip out the first argument as it is the binary name.
   self->dart_entrypoint_arguments = g_strdupv(*arguments + 1);
 
   g_autoptr(GError) error = nullptr;
@@ -123,19 +140,11 @@ static gboolean my_application_local_command_line(GApplication* application,
 
 // Implements GApplication::startup.
 static void my_application_startup(GApplication* application) {
-  // MyApplication* self = MY_APPLICATION(object);
-
-  // Perform any actions required at application startup.
-
   G_APPLICATION_CLASS(my_application_parent_class)->startup(application);
 }
 
 // Implements GApplication::shutdown.
 static void my_application_shutdown(GApplication* application) {
-  // MyApplication* self = MY_APPLICATION(object);
-
-  // Perform any actions required at application shutdown.
-
   G_APPLICATION_CLASS(my_application_parent_class)->shutdown(application);
 }
 
@@ -158,10 +167,6 @@ static void my_application_class_init(MyApplicationClass* klass) {
 static void my_application_init(MyApplication* self) {}
 
 MyApplication* my_application_new() {
-  // Set the program name to the application ID, which helps various systems
-  // like GTK and desktop environments map this running application to its
-  // corresponding .desktop file. This ensures better integration by allowing
-  // the application to be recognized beyond its binary name.
   g_set_prgname(APPLICATION_ID);
 
   return MY_APPLICATION(g_object_new(my_application_get_type(),
