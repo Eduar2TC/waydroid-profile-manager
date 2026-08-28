@@ -122,11 +122,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  bool _hasChanges(AppController controller) {
+    if (_selectedProfile == null) return false;
+    final active = controller.activeProfile;
+    if (active == null) return true;
+    return _selectedProfile!.id != active.id || controller.selectedOrientation != active.defaultOrientation;
+  }
+
   Widget _buildApplyButton(BuildContext context, AppController controller) {
+    final enabled = !controller.isApplying && _selectedProfile != null && _hasChanges(controller);
     return FilledButton.icon(
-      onPressed: controller.isApplying || _selectedProfile == null
-          ? null
-          : () => controller.applyProfile(_selectedProfile!),
+      onPressed: enabled ? () => controller.applyProfile(_selectedProfile!) : null,
       icon: const Icon(Icons.play_arrow),
       label: Text(controller.isApplying ? 'Applying...' : 'Apply', style: const TextStyle(fontSize: 16)),
       style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16), minimumSize: const Size(double.infinity, 56)),
