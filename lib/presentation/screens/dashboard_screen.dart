@@ -108,21 +108,10 @@ import '../widgets/status_indicator.dart';class DashboardScreen extends Stateles
   }
 
   Widget _buildQuickProfiles(BuildContext context, AppController controller) {
-    final profiles = controller.profiles.take(6).toList();
-    if (profiles.isEmpty) return const SizedBox.shrink();
-
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
-        childAspectRatio: 2.2,
-      ),
-      itemCount: profiles.length,
-      itemBuilder: (context, index) {
-        final profile = profiles[index];
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: controller.profiles.take(6).map((profile) {
         return ActionChip(
           avatar: Icon(profile.builtin ? Icons.star : Icons.star_border, size: 16, color: profile.builtin ? Colors.amber : Colors.white54),
           label: Text(profile.name, style: const TextStyle(fontSize: 12)),
@@ -133,7 +122,7 @@ import '../widgets/status_indicator.dart';class DashboardScreen extends Stateles
                   controller.applyProfile(profile);
                 },
         );
-      },
+      }).toList(),
     );
   }
 
