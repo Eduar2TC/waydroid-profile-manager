@@ -111,27 +111,35 @@ import '../widgets/status_indicator.dart';class DashboardScreen extends Stateles
     final profiles = controller.profiles.take(6).toList();
     if (profiles.isEmpty) return const SizedBox.shrink();
 
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
-        childAspectRatio: 2.2,
-      ),
-      itemCount: profiles.length,
-      itemBuilder: (context, index) {
-        final profile = profiles[index];
-        return ActionChip(
-          avatar: Icon(profile.builtin ? Icons.star : Icons.star_border, size: 16, color: profile.builtin ? Colors.amber : Colors.white54),
-          label: Text(profile.name, style: const TextStyle(fontSize: 12)),
-          onPressed: controller.isApplying
-              ? null
-              : () {
-                  controller.setOrientation(profile.defaultOrientation);
-                  controller.applyProfile(profile);
-                },
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final chipWidth = 120.0;
+        final spacing = 8.0;
+        final cols = (constraints.maxWidth / (chipWidth + spacing)).floor().clamp(1, 3);
+
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: cols,
+            crossAxisSpacing: spacing,
+            mainAxisSpacing: spacing,
+            childAspectRatio: 2.2,
+          ),
+          itemCount: profiles.length,
+          itemBuilder: (context, index) {
+            final profile = profiles[index];
+            return ActionChip(
+              avatar: Icon(profile.builtin ? Icons.star : Icons.star_border, size: 16, color: profile.builtin ? Colors.amber : Colors.white54),
+              label: Text(profile.name, style: const TextStyle(fontSize: 12)),
+              onPressed: controller.isApplying
+                  ? null
+                  : () {
+                      controller.setOrientation(profile.defaultOrientation);
+                      controller.applyProfile(profile);
+                    },
+            );
+          },
         );
       },
     );
