@@ -111,22 +111,51 @@ import '../widgets/status_indicator.dart';class DashboardScreen extends Stateles
     final profiles = controller.profiles.take(6).toList();
     if (profiles.isEmpty) return const SizedBox.shrink();
 
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      alignment: WrapAlignment.center,
-      children: profiles.map((profile) {
-        return ActionChip(
-          avatar: Icon(profile.builtin ? Icons.star : Icons.star_border, size: 16, color: profile.builtin ? Colors.amber : Colors.white54),
-          label: Text(profile.name, style: const TextStyle(fontSize: 12)),
-          onPressed: controller.isApplying
-              ? null
-              : () {
-                  controller.setOrientation(profile.defaultOrientation);
-                  controller.applyProfile(profile);
-                },
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const spacing = 8.0;
+        const minChipWidth = 100.0;
+        final cols = (constraints.maxWidth / (minChipWidth + spacing)).floor().clamp(1, profiles.length);
+        final chipWidth = (constraints.maxWidth - spacing * (cols - 1)) / cols;
+
+        final rows = <List<Profile>>[];
+        for (var i = 0; i < profiles.length; i += cols) {
+          rows.add(profiles.sublist(i, (i + cols).clamp(0, profiles.length)));
+        }
+
+        return Column(
+          children: rows.map((row) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: spacing),
+              child: Row(
+                children: [
+                  for (var i = 0; i < row.length; i++) ...[
+                    if (i > 0) const SizedBox(width: spacing),
+                    SizedBox(
+                      width: chipWidth,
+                      child: ActionChip(
+                        avatar: Icon(row[i].builtin ? Icons.star : Icons.star_border, size: 16, color: row[i].builtin ? Colors.amber : Colors.white54),
+                        label: Text(row[i].name, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis),
+                        onPressed: controller.isApplying
+                            ? null
+                            : () {
+                                controller.setOrientation(row[i].defaultOrientation);
+                                controller.applyProfile(row[i]);
+                              },
+                      ),
+                    ),
+                  ],
+                  // Fill remaining slots in incomplete rows
+                  for (var i = row.length; i < cols; i++) ...[
+                    if (i > 0 || row.isNotEmpty) const SizedBox(width: spacing),
+                    SizedBox(width: chipWidth),
+                  ],
+                ],
+              ),
+            );
+          }).toList(),
         );
-      }).toList(),
+      },
     );
   }
 
