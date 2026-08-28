@@ -127,20 +127,23 @@ import '../widgets/status_indicator.dart';class DashboardScreen extends Stateles
             return Padding(
               padding: const EdgeInsets.only(bottom: spacing),
               child: Row(
-                children: row.map((profile) {
-                  return Expanded(
-                    child: ActionChip(
-                      avatar: Icon(profile.builtin ? Icons.star : Icons.star_border, size: 16, color: profile.builtin ? Colors.amber : Colors.white54),
-                      label: Text(profile.name, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis, maxLines: 1),
-                      onPressed: controller.isApplying
-                          ? null
-                          : () {
-                              controller.setOrientation(profile.defaultOrientation);
-                              controller.applyProfile(profile);
-                            },
+                children: [
+                  for (var i = 0; i < row.length; i++) ...[
+                    if (i > 0) SizedBox(width: spacing),
+                    Expanded(
+                      child: ActionChip(
+                        avatar: Icon(row[i].builtin ? Icons.star : Icons.star_border, size: 16, color: row[i].builtin ? Colors.amber : Colors.white54),
+                        label: Text(row[i].name, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis, maxLines: 1),
+                        onPressed: controller.isApplying
+                            ? null
+                            : () {
+                                controller.setOrientation(row[i].defaultOrientation);
+                                controller.applyProfile(row[i]);
+                              },
+                      ),
                     ),
-                  );
-                }).toList(),
+                  ],
+                ],
               ),
             );
           }).toList(),
