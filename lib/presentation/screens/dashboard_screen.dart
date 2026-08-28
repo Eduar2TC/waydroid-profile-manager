@@ -131,18 +131,15 @@ import '../widgets/status_indicator.dart';class DashboardScreen extends Stateles
                 children: [
                   ...row.map((profile) {
                     return Expanded(
-                      child: SizedBox(
-                        width: double.infinity,
-                        child: ActionChip(
-                          avatar: Icon(profile.builtin ? Icons.star : Icons.star_border, size: 16, color: profile.builtin ? Colors.amber : Colors.white54),
-                          label: Text(profile.name, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis, maxLines: 1),
-                          onPressed: controller.isApplying
-                              ? null
-                              : () {
-                                  controller.setOrientation(profile.defaultOrientation);
-                                  controller.applyProfile(profile);
-                                },
-                        ),
+                      child: ActionChip(
+                        avatar: Icon(profile.builtin ? Icons.star : Icons.star_border, size: 16, color: profile.builtin ? Colors.amber : Colors.white54),
+                        label: Text(profile.name, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis, maxLines: 1),
+                        onPressed: controller.isApplying
+                            ? null
+                            : () {
+                                controller.setOrientation(profile.defaultOrientation);
+                                controller.applyProfile(profile);
+                              },
                       ),
                     );
                   }),
