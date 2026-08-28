@@ -73,6 +73,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
               _buildApplyButton(context, controller),
               const SizedBox(height: 16),
 
+              // Quick profile selection
+              _buildSectionTitle('Quick Select'),
+              const SizedBox(height: 8),
+              _buildQuickProfiles(context, controller),
+              const SizedBox(height: 16),
+
               // Reset button
               _buildResetButton(context, controller),
             ],
@@ -130,6 +136,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
       icon: const Icon(Icons.play_arrow),
       label: Text(controller.isApplying ? 'Applying...' : 'Apply', style: const TextStyle(fontSize: 16)),
       style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16), minimumSize: const Size(double.infinity, 56)),
+    );
+  }
+
+  Widget _buildQuickProfiles(BuildContext context, AppController controller) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: controller.profiles.take(6).map((profile) {
+        return ActionChip(
+          avatar: Icon(profile.builtin ? Icons.star : Icons.star_border, size: 16, color: profile.builtin ? Colors.amber : Colors.white54),
+          label: Text(profile.name, style: const TextStyle(fontSize: 12)),
+          onPressed: controller.isApplying
+              ? null
+              : () {
+                  controller.setOrientation(profile.defaultOrientation);
+                  controller.applyProfile(profile);
+                },
+        );
+      }).toList(),
     );
   }
 
