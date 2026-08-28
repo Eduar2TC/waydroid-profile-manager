@@ -3,22 +3,32 @@ import 'package:provider/provider.dart';
 
 import '../../application/controllers/app_controller.dart';
 import '../../domain/entities/profile.dart';
-import '../../domain/enums/orientation.dart';
 import '../dialogs/confirm_dialog.dart';
 import '../widgets/orientation_selector.dart';
 import '../widgets/profile_card.dart';
-import '../widgets/status_indicator.dart';class DashboardScreen extends StatelessWidget {
+import '../widgets/status_indicator.dart';
+
+class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
+
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  Profile? _selectedProfile;
 
   @override
   Widget build(BuildContext context) {
     return Consumer<AppController>(
       builder: (context, controller, _) {
+        if (_selectedProfile == null && controller.profiles.isNotEmpty) {
+          _selectedProfile = controller.profiles.first;
+        }
         return Stack(
           children: [
             _buildScaffold(context, controller),
-            if (controller.isApplying)
-              _ApplyProgressOverlay(controller: controller),
+            if (controller.isApplying) _ApplyProgressOverlay(controller: controller),
           ],
         );
       },
@@ -55,14 +65,12 @@ import '../widgets/status_indicator.dart';class DashboardScreen extends Stateles
               OrientationSelector(selected: controller.selectedOrientation, onChanged: controller.isApplying ? (_) {} : controller.setOrientation),
               const SizedBox(height: 24),
 
-              // Apply button
-              _buildApplyButton(context, controller),
-              const SizedBox(height: 16),
-
-              // Quick profile selection
-              _buildSectionTitle('Quick Select'),
+              // Profile selector + Apply
+              _buildSectionTitle('Select Profile'),
               const SizedBox(height: 8),
-              _buildQuickProfiles(context, controller),
+              _buildProfileDropdown(context, controller),
+              const SizedBox(height: 12),
+              _buildApplyButton(context, controller),
               const SizedBox(height: 16),
 
               // Reset button
@@ -98,72 +106,30 @@ import '../widgets/status_indicator.dart';class DashboardScreen extends Stateles
     );
   }
 
+  Widget _buildProfileDropdown(BuildContext context, AppController controller) {
+    return DropdownMenu<Profile>(
+      expandedInsets: EdgeInsets.zero,
+      initialSelection: _selectedProfile,
+      onSelected: (profile) => setState(() => _selectedProfile = profile),
+      enabled: !controller.isApplying,
+      dropdownMenuEntries: controller.profiles.map((p) {
+        return DropdownMenuEntry<Profile>(
+          value: p,
+          label: p.name,
+          leadingIcon: Icon(p.builtin ? Icons.star : Icons.star_border, size: 18, color: p.builtin ? Colors.amber : Colors.white54),
+        );
+      }).toList(),
+    );
+  }
+
   Widget _buildApplyButton(BuildContext context, AppController controller) {
     return FilledButton.icon(
-      onPressed: controller.isApplying ? null : () => _applyProfile(context, controller),
-      icon: const Icon(Icons.play_arrow),
-      label: Text(controller.isApplying ? 'Applying...' : 'Apply Profile', style: const TextStyle(fontSize: 16)),
-      style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16), minimumSize: const Size(double.infinity, 56)),
-    );
-  }
-
-  Widget _buildQuickProfiles(BuildContext context, AppController controller) {
-    final profiles = controller.profiles.take(6).toList();
-    if (profiles.isEmpty) return const SizedBox.shrink();
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        const spacing = 8.0;
-        const minChipWidth = 110.0;
-        final cols = (constraints.maxWidth / (minChipWidth + spacing)).floor().clamp(1, 3);
-
-        if (cols == 1) {
-          return Wrap(
-            spacing: spacing,
-            runSpacing: spacing,
-            alignment: WrapAlignment.center,
-            children: profiles.map((p) => _buildChip(p, controller)).toList(),
-          );
-        }
-
-        final rows = <List<Profile>>[];
-        for (var i = 0; i < profiles.length; i += cols) {
-          rows.add(profiles.sublist(i, (i + cols).clamp(0, profiles.length)));
-        }
-
-        return Column(
-          children: rows.map((row) {
-            return Padding(
-              padding: const EdgeInsets.only(bottom: spacing),
-              child: Row(
-                children: [
-                  for (var c = 0; c < row.length; c++) ...[
-                    if (c > 0) SizedBox(width: spacing),
-                    Expanded(child: _buildChip(row[c], controller)),
-                  ],
-                  for (var i = row.length; i < cols; i++) ...[
-                    SizedBox(width: spacing),
-                    const Expanded(child: SizedBox()),
-                  ],
-                ],
-              ),
-            );
-          }).toList(),
-        );
-      },
-    );
-  }
-
-  Widget _buildChip(Profile profile, AppController controller) {
-    return ActionChip(
-      avatar: Icon(profile.builtin ? Icons.star : Icons.star_border, size: 16, color: profile.builtin ? Colors.amber : Colors.white54),
-      label: Text(profile.name, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis, maxLines: 1),
-      onPressed: controller.isApplying
+      onPressed: controller.isApplying || _selectedProfile == null
           ? null
-          : () {
-              controller.setOrientation(profile.defaultOrientation);
-              controller.applyProfile(profile);
-            },
+          : () => controller.applyProfile(_selectedProfile!),
+      icon: const Icon(Icons.play_arrow),
+      label: Text(controller.isApplying ? 'Applying...' : 'Apply', style: const TextStyle(fontSize: 16)),
+      style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16), minimumSize: const Size(double.infinity, 56)),
     );
   }
 
@@ -176,17 +142,6 @@ import '../widgets/status_indicator.dart';class DashboardScreen extends Stateles
         foregroundColor: Colors.orange,
         side: const BorderSide(color: Colors.orange),
       ),
-    );
-  }
-
-  Future<void> _applyProfile(BuildContext context, AppController controller) async {
-    final profiles = controller.profiles;
-    if (profiles.isEmpty) return;
-
-    await showDialog<Profile>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => _ProfileSelectionDialog(profiles: profiles, orientation: controller.selectedOrientation, controller: controller),
     );
   }
 
@@ -206,63 +161,6 @@ import '../widgets/status_indicator.dart';class DashboardScreen extends Stateles
     if (confirmed == true && context.mounted) {
       await controller.reset();
     }
-  }
-}
-
-class _ProfileSelectionDialog extends StatefulWidget {
-  final List<Profile> profiles;
-  final WaydroidOrientation orientation;
-  final AppController controller;
-
-  const _ProfileSelectionDialog({required this.profiles, required this.orientation, required this.controller});
-
-  @override
-  State<_ProfileSelectionDialog> createState() => _ProfileSelectionDialogState();
-}
-
-class _ProfileSelectionDialogState extends State<_ProfileSelectionDialog> {
-  Profile? _applyingProfile;
-
-  bool get _isBusy => _applyingProfile != null;
-
-  Future<void> _onSelect(Profile profile) async {
-    if (_isBusy) return;
-
-    // Close dialog immediately — the dashboard overlay will show progress
-    Navigator.of(context).pop(profile);
-
-    // Start the apply (non-blocking, progress shown via overlay)
-    await widget.controller.applyProfile(profile);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Select Profile'),
-      content: SizedBox(
-        width: 400,
-        child: ListView.builder(
-          shrinkWrap: true,
-          itemCount: widget.profiles.length,
-          itemBuilder: (context, index) {
-            final profile = widget.profiles[index];
-            final dims = profile.getActualDimensions(widget.orientation);
-            final isApplyingThis = _applyingProfile == profile;
-
-            return ListTile(
-              enabled: !_isBusy,
-              leading: isApplyingThis
-                  ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
-                  : Icon(profile.builtin ? Icons.star : Icons.phone_android, color: profile.builtin ? Colors.amber : null),
-              title: Text(profile.name),
-              subtitle: Text('${dims[0]}×${dims[1]} • ${profile.density} DPI • ${widget.orientation.displayName}'),
-              onTap: _isBusy ? null : () => _onSelect(profile),
-            );
-          },
-        ),
-      ),
-      actions: [TextButton(onPressed: _isBusy ? null : () => Navigator.of(context).pop(), child: const Text('Cancel'))],
-    );
   }
 }
 
@@ -286,45 +184,27 @@ class _ApplyProgressOverlay extends StatelessWidget {
           child: Container(
             constraints: const BoxConstraints(maxWidth: 360),
             padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.circular(20),
-            ),
+            decoration: BoxDecoration(color: Theme.of(context).colorScheme.surface, borderRadius: BorderRadius.circular(20)),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                SizedBox(
-                  width: 56,
-                  height: 56,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 4,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                ),
+                SizedBox(width: 56, height: 56, child: CircularProgressIndicator(strokeWidth: 4, valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.primary))),
                 const SizedBox(height: 24),
                 Text(
                   step,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
                 Text(
                   message,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
-                      ),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7)),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 20),
                 Text(
                   'This may take up to 60 seconds\nwhile Waydroid restarts',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
-                      ),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4)),
                   textAlign: TextAlign.center,
                 ),
               ],
