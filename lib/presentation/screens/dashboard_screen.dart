@@ -108,21 +108,62 @@ import '../widgets/status_indicator.dart';class DashboardScreen extends Stateles
   }
 
   Widget _buildQuickProfiles(BuildContext context, AppController controller) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: controller.profiles.take(6).map((profile) {
-        return ActionChip(
-          avatar: Icon(profile.builtin ? Icons.star : Icons.star_border, size: 16, color: profile.builtin ? Colors.amber : Colors.white54),
-          label: Text(profile.name, style: const TextStyle(fontSize: 12)),
-          onPressed: controller.isApplying
-              ? null
-              : () {
-                  controller.setOrientation(profile.defaultOrientation);
-                  controller.applyProfile(profile);
-                },
+    final profiles = controller.profiles.take(6).toList();
+    if (profiles.isEmpty) return const SizedBox.shrink();
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const spacing = 8.0;
+        const minChipWidth = 110.0;
+        final cols = (constraints.maxWidth / (minChipWidth + spacing)).floor().clamp(1, 3);
+
+        if (cols == 1) {
+          return Wrap(
+            spacing: spacing,
+            runSpacing: spacing,
+            alignment: WrapAlignment.center,
+            children: profiles.map((p) => _buildChip(p, controller)).toList(),
+          );
+        }
+
+        final rows = <List<Profile>>[];
+        for (var i = 0; i < profiles.length; i += cols) {
+          rows.add(profiles.sublist(i, (i + cols).clamp(0, profiles.length)));
+        }
+
+        return Column(
+          children: rows.map((row) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: spacing),
+              child: Row(
+                children: [
+                  for (var c = 0; c < row.length; c++) ...[
+                    if (c > 0) SizedBox(width: spacing),
+                    Expanded(child: _buildChip(row[c], controller)),
+                  ],
+                  for (var i = row.length; i < cols; i++) ...[
+                    SizedBox(width: spacing),
+                    const Expanded(child: SizedBox()),
+                  ],
+                ],
+              ),
+            );
+          }).toList(),
         );
-      }).toList(),
+      },
+    );
+  }
+
+  Widget _buildChip(Profile profile, AppController controller) {
+    return ActionChip(
+      avatar: Icon(profile.builtin ? Icons.star : Icons.star_border, size: 16, color: profile.builtin ? Colors.amber : Colors.white54),
+      label: Text(profile.name, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis, maxLines: 1),
+      onPressed: controller.isApplying
+          ? null
+          : () {
+              controller.setOrientation(profile.defaultOrientation);
+              controller.applyProfile(profile);
+            },
     );
   }
 
