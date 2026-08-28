@@ -122,31 +122,48 @@ import '../widgets/status_indicator.dart';class DashboardScreen extends Stateles
           rows.add(profiles.sublist(i, (i + cols).clamp(0, profiles.length)));
         }
 
+        // Measure max intrinsic width per column
+        final colWidths = List.filled(cols, 0.0);
+        final tp = TextPainter(textDirection: TextDirection.ltr);
+        for (final row in rows) {
+          for (var c = 0; c < row.length; c++) {
+            tp.text = TextSpan(text: row[c].name, style: const TextStyle(fontSize: 12));
+            tp.layout();
+            final chipWidth = tp.width + 72; // avatar + padding
+            if (chipWidth > colWidths[c]) colWidths[c] = chipWidth;
+          }
+        }
+        tp.dispose();
+
+        // Scale columns to fit available width
+        final totalColWidth = colWidths.reduce((a, b) => a + b);
+        final totalSpacing = spacing * (cols - 1);
+        final availableForCols = constraints.maxWidth - totalSpacing;
+        final scale = availableForCols / totalColWidth;
+        final finalWidths = colWidths.map((w) => w * scale).toList();
+
         return Column(
           children: rows.map((row) {
-            final placeholders = cols - row.length;
             return Padding(
               padding: const EdgeInsets.only(bottom: spacing),
               child: Row(
                 children: [
-                  ...row.map((profile) {
-                    return Expanded(
-                      child: SizedBox(
-                        width: double.infinity,
-                        child: ActionChip(
-                          avatar: Icon(profile.builtin ? Icons.star : Icons.star_border, size: 16, color: profile.builtin ? Colors.amber : Colors.white54),
-                          label: Text(profile.name, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis, maxLines: 1),
-                          onPressed: controller.isApplying
-                              ? null
-                              : () {
-                                  controller.setOrientation(profile.defaultOrientation);
-                                  controller.applyProfile(profile);
-                                },
-                        ),
+                  for (var c = 0; c < row.length; c++) ...[
+                    if (c > 0) SizedBox(width: spacing),
+                    SizedBox(
+                      width: finalWidths[c],
+                      child: ActionChip(
+                        avatar: Icon(row[c].builtin ? Icons.star : Icons.star_border, size: 16, color: row[c].builtin ? Colors.amber : Colors.white54),
+                        label: Text(row[c].name, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis, maxLines: 1),
+                        onPressed: controller.isApplying
+                            ? null
+                            : () {
+                                controller.setOrientation(row[c].defaultOrientation);
+                                controller.applyProfile(row[c]);
+                              },
                       ),
-                    );
-                  }),
-                  for (var i = 0; i < placeholders; i++) const Expanded(child: SizedBox()),
+                    ),
+                  ],
                 ],
               ),
             );
