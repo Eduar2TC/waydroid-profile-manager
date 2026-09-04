@@ -193,53 +193,30 @@ pub fn apply_profile(
     // not the internal Android display resolution. We need wm size to make
     // Android render at the correct resolution so the content fills the window.
     //
-    // Always use portrait dimensions for wm size — when user_rotation=1,
-    // Android rotates the display 90°, so a portrait wm size becomes landscape.
-    let wm_w = std::cmp::min(config.width, config.height);
-    let wm_h = std::cmp::max(config.width, config.height);
+    // wm size dimensions match the host window dimensions (orientation-specific).
+    // For landscape, wm size = landscape dims. For portrait, wm size = portrait dims.
     emit_progress("ApplyingDisplay", "Setting display resolution", false);
-    if let Err(e) = backend.shell_command(&["wm", "size", "reset"]) {
-        eprintln!("wm size reset failed (non-fatal): {}", e);
-    }
-    std::thread::sleep(std::time::Duration::from_secs(1));
     if let Err(e) = backend.shell_command(&[
         "wm", "size",
-        &format!("{}x{}", wm_w, wm_h),
+        &format!("{}x{}", config.wm_width, config.wm_height),
     ]) {
-        eprintln!("wm size failed (non-fatal): {}", e);
+        log::warn!("wm size failed (non-fatal): {}", e);
     }
-    if let Err(e) = backend.shell_command(&["wm", "density", "reset"]) {
-        eprintln!("wm density reset failed (non-fatal): {}", e);
-    }
-    std::thread::sleep(std::time::Duration::from_secs(1));
     if let Err(e) = backend.shell_command(&["wm", "density", &config.density.to_string()]) {
-        eprintln!("wm density failed (non-fatal): {}", e);
+        log::warn!("wm density failed (non-fatal): {}", e);
     }
     emit_progress("ApplyingDisplay", "Display resolution applied", true);
     std::thread::sleep(std::time::Duration::from_secs(2));
 
-    // Step 10: Apply rotation AFTER UI is available and display resolution is set.
-    emit_progress("ApplyingRotation", "Disabling auto-rotation", false);
+    // Step 10: Set display rotation.
+    //
+    // Since wm size now matches the host window dimensions, rotation is always 0.
+    // The command is kept for compatibility with Android's display framework.
+    emit_progress("ApplyingRotation", "Setting rotation", false);
     if let Err(e) = backend.shell_command(&[
-        "cmd", "settings", "put", "system", "accelerometer_rotation", "0",
+        "cmd", "window", "set-user-rotation", "lock", &config.rotation.to_string(),
     ]) {
-        log::warn!("Failed to disable auto-rotation: {}", e);
-    }
-
-    emit_progress(
-        "ApplyingRotation",
-        &format!("Setting user_rotation to {}", config.rotation),
-        false,
-    );
-    if let Err(e) = backend.shell_command(&[
-        "cmd",
-        "settings",
-        "put",
-        "system",
-        "user_rotation",
-        &config.rotation.to_string(),
-    ]) {
-        log::warn!("Failed to set rotation: {}", e);
+        log::warn!("Failed to set rotation via cmd (non-fatal): {}", e);
     }
     emit_progress("ApplyingRotation", "Rotation applied", true);
 

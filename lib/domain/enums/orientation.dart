@@ -3,15 +3,30 @@ enum WaydroidOrientation {
   landscape,
   portrait;
 
-  /// Convert base dimensions to actual dimensions based on orientation.
-  /// Landscape: width = baseWidth, height = baseHeight, rotation = 1
+  /// Convert base dimensions to actual HOST WINDOW dimensions based on orientation.
+  ///
+  /// Landscape: width = baseWidth, height = baseHeight, rotation = 0
   /// Portrait:  width = baseHeight, height = baseWidth, rotation = 0
   List<int> toActual(int baseWidth, int baseHeight) {
     switch (this) {
       case WaydroidOrientation.landscape:
-        return [baseWidth, baseHeight, 1];
+        return [baseWidth, baseHeight, 0];
       case WaydroidOrientation.portrait:
         return [baseHeight, baseWidth, 0];
+    }
+  }
+
+  /// Compute internal Android display dimensions for `wm size`.
+  ///
+  /// Returns dimensions matching the host window orientation:
+  /// - Landscape: (max, min) — matches the host window width × height
+  /// - Portrait: (min, max) — matches the host window width × height
+  List<int> toWmSize(int baseWidth, int baseHeight) {
+    switch (this) {
+      case WaydroidOrientation.landscape:
+        return [baseWidth, baseHeight];
+      case WaydroidOrientation.portrait:
+        return [baseHeight, baseWidth];
     }
   }
 
