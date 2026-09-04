@@ -2,10 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-import '../../domain/entities/profile.dart';
-import '../../domain/entities/waydroid_status.dart';
-import '../../domain/enums/orientation.dart';
-import '../../infrastructure/rust/waydroid_service.dart';
+import 'package:waydroid_profile_manager/domain/entities/profile.dart';
+import 'package:waydroid_profile_manager/domain/entities/waydroid_status.dart';
+import 'package:waydroid_profile_manager/domain/enums/orientation.dart';
+import 'package:waydroid_profile_manager/infrastructure/rust/waydroid_service.dart';
 
 /// Main application state controller.
 /// Manages all application state and coordinates with the Waydroid service.

@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:math';
 
-import '../../domain/entities/profile.dart';
-import '../../domain/entities/waydroid_status.dart';
-import '../../domain/enums/orientation.dart';
+
+import 'package:waydroid_profile_manager/domain/entities/profile.dart';
+import 'package:waydroid_profile_manager/domain/entities/waydroid_status.dart';
+import 'package:waydroid_profile_manager/domain/enums/orientation.dart';
+
 import 'waydroid_service.dart';
 
 /// Mock Waydroid service for development and testing.

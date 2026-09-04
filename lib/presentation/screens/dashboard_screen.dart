@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:waydroid_profile_manager/application/controllers/app_controller.dart';
+import 'package:waydroid_profile_manager/domain/entities/profile.dart';
+import 'package:waydroid_profile_manager/presentation/dialogs/confirm_dialog.dart';
+import 'package:waydroid_profile_manager/presentation/widgets/orientation_selector.dart';
+import 'package:waydroid_profile_manager/presentation/widgets/profile_card.dart';
+import 'package:waydroid_profile_manager/presentation/widgets/status_indicator.dart';
 
-import '../../application/controllers/app_controller.dart';
-import '../../domain/entities/profile.dart';
-import '../dialogs/confirm_dialog.dart';
-import '../widgets/orientation_selector.dart';
-import '../widgets/profile_card.dart';
-import '../widgets/status_indicator.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -17,6 +17,18 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   Profile? _selectedProfile;
+
+  static const TextStyle _chipLabelStyle = TextStyle(fontSize: 12);
+
+  /// Ancho real del texto renderizado con el estilo del label del chip.
+  double _measureLabelWidth(String text) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: _chipLabelStyle),
+      maxLines: 1,
+      textDirection: TextDirection.ltr,
+    )..layout();
+    return painter.width;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -130,9 +142,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildApplyButton(BuildContext context, AppController controller) {
     return FilledButton.icon(
-      onPressed: controller.isApplying || _selectedProfile == null
-          ? null
-          : () => controller.applyProfile(_selectedProfile!),
+      onPressed: controller.isApplying || _selectedProfile == null ? null : () => controller.applyProfile(_selectedProfile!),
       icon: const Icon(Icons.play_arrow),
       label: Text(controller.isApplying ? 'Applying...' : 'Apply', style: const TextStyle(fontSize: 16)),
       style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16), minimumSize: const Size(double.infinity, 56)),
@@ -140,21 +150,63 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildQuickProfiles(BuildContext context, AppController controller) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: controller.profiles.take(6).map((profile) {
-        return ActionChip(
-          avatar: Icon(profile.builtin ? Icons.star : Icons.star_border, size: 16, color: profile.builtin ? Colors.amber : Colors.white54),
-          label: Text(profile.name, style: const TextStyle(fontSize: 12)),
-          onPressed: controller.isApplying
-              ? null
-              : () {
-                  controller.setOrientation(profile.defaultOrientation);
-                  controller.applyProfile(profile);
-                },
+    final profiles = controller.profiles.take(6).toList();
+    if (profiles.isEmpty) return const SizedBox.shrink();
+
+    const spacing = 8.0;
+    const minChipWidth = 110.0;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cols = (constraints.maxWidth / (minChipWidth + spacing)).floor().clamp(1, 3);
+
+        // Repartir los perfiles por columna: el perfil i cae en la columna i % cols.
+        final columns = List.generate(cols, (_) => <Profile>[]);
+        for (var i = 0; i < profiles.length; i++) {
+          columns[i % cols].add(profiles[i]);
+        }
+
+        // Ancho de label fijo por columna = el más ancho de esa columna.
+        // Al fijar el ancho del TEXTO (no del chip completo), el ancho
+        // total del chip (avatar + gap + padding + label) queda igual
+        // para todos los chips de la columna, sin depender de que
+        // ActionChip respete un stretch externo.
+        final columnLabelWidths = columns.map((col) {
+          return col.map((p) => _measureLabelWidth(p.name)).fold<double>(0, (a, b) => a > b ? a : b);
+        }).toList();
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (var c = 0; c < cols; c++) ...[
+              if (c > 0) const SizedBox(width: spacing),
+              Expanded(
+                child: Column(
+                  children: [
+                    for (var i = 0; i < columns[c].length; i++) ...[if (i > 0) const SizedBox(height: spacing), _buildChip(columns[c][i], controller, columnLabelWidths[c])],
+                  ],
+                ),
+              ),
+            ],
+          ],
         );
-      }).toList(),
+      },
+    );
+  }
+
+  Widget _buildChip(Profile profile, AppController controller, double labelWidth) {
+    return ActionChip(
+      avatar: Icon(profile.builtin ? Icons.star : Icons.star_border, size: 16, color: profile.builtin ? Colors.amber : Colors.white54),
+      label: SizedBox(
+        width: labelWidth,
+        child: Text(profile.name, style: _chipLabelStyle, overflow: TextOverflow.ellipsis, maxLines: 1),
+      ),
+      onPressed: controller.isApplying
+          ? null
+          : () {
+              controller.setOrientation(profile.defaultOrientation);
+              controller.applyProfile(profile);
+            },
     );
   }
 

@@ -1,4 +1,4 @@
-import '../enums/orientation.dart';
+import 'package:waydroid_profile_manager/domain/enums/orientation.dart';
 
 /// A Waydroid device profile.
 class Profile {

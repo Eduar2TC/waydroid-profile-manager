@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-
-import '../../domain/entities/profile.dart';
+import 'package:waydroid_profile_manager/domain/entities/profile.dart';
 
 class ProfileCard extends StatelessWidget {
   final Profile profile;

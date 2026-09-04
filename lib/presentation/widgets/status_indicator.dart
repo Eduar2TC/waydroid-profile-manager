@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-
-import '../../domain/entities/waydroid_status.dart';
+import 'package:waydroid_profile_manager/domain/entities/waydroid_status.dart';
 
 class StatusIndicator extends StatelessWidget {
   final WaydroidStatus status;

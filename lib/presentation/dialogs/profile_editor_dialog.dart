@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:waydroid_profile_manager/domain/entities/profile.dart';
+import 'package:waydroid_profile_manager/domain/enums/orientation.dart';
 
-import '../../domain/entities/profile.dart';
-import '../../domain/enums/orientation.dart';
 
 /// Result of the profile editor dialog.
 class ProfileEditorResult {

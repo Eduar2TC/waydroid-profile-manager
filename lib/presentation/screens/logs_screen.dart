@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-
-import '../../application/controllers/app_controller.dart';
+import 'package:waydroid_profile_manager/application/controllers/app_controller.dart';
 
 class LogsScreen extends StatelessWidget {
   const LogsScreen({super.key});

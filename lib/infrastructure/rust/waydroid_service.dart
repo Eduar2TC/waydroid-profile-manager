@@ -1,5 +1,6 @@
-import '../../domain/entities/profile.dart';
-import '../../domain/entities/waydroid_status.dart';
+
+import 'package:waydroid_profile_manager/domain/entities/profile.dart';
+import 'package:waydroid_profile_manager/domain/entities/waydroid_status.dart';
 
 /// Progress update during an async apply operation.
 class ApplyProgress {

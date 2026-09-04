@@ -1,15 +1,12 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import '../../application/controllers/app_controller.dart';
-import '../../domain/entities/profile.dart';
-import '../../domain/enums/orientation.dart';
-import '../dialogs/confirm_dialog.dart';
-import '../dialogs/profile_editor_dialog.dart';
-import '../widgets/profile_card.dart';
+import 'package:waydroid_profile_manager/application/controllers/app_controller.dart';
+import 'package:waydroid_profile_manager/domain/entities/profile.dart';
+import 'package:waydroid_profile_manager/presentation/dialogs/confirm_dialog.dart';
+import 'package:waydroid_profile_manager/presentation/dialogs/profile_editor_dialog.dart';
+import 'package:waydroid_profile_manager/presentation/widgets/profile_card.dart';
 
 class ProfilesScreen extends StatelessWidget {
   const ProfilesScreen({super.key});
@@ -22,30 +19,15 @@ class ProfilesScreen extends StatelessWidget {
           appBar: AppBar(
             title: const Text('Profiles'),
             actions: [
-              IconButton(
-                icon: const Icon(Icons.file_upload),
-                onPressed: () => _importProfiles(context, controller),
-                tooltip: 'Import Profiles',
-              ),
-              IconButton(
-                icon: const Icon(Icons.file_download),
-                onPressed: () => _exportProfiles(context, controller),
-                tooltip: 'Export Profiles',
-              ),
-              IconButton(
-                icon: const Icon(Icons.add),
-                onPressed: () => _createProfile(context, controller),
-                tooltip: 'Create Profile',
-              ),
+              IconButton(icon: const Icon(Icons.file_upload), onPressed: () => _importProfiles(context, controller), tooltip: 'Import Profiles'),
+              IconButton(icon: const Icon(Icons.file_download), onPressed: () => _exportProfiles(context, controller), tooltip: 'Export Profiles'),
+              IconButton(icon: const Icon(Icons.add), onPressed: () => _createProfile(context, controller), tooltip: 'Create Profile'),
             ],
           ),
           body: Stack(
             children: [
-              controller.profiles.isEmpty
-                  ? _buildEmptyState(context)
-                  : _buildProfileList(context, controller),
-              if (controller.isApplying)
-                _ApplyProgressOverlay(controller: controller),
+              controller.profiles.isEmpty ? _buildEmptyState(context) : _buildProfileList(context, controller),
+              if (controller.isApplying) _ApplyProgressOverlay(controller: controller),
             ],
           ),
         );
@@ -58,27 +40,13 @@ class ProfilesScreen extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.phone_android,
-            size: 64,
-            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
-          ),
+          Icon(Icons.phone_android, size: 64, color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5)),
           const SizedBox(height: 16),
-          Text(
-            'No profiles',
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
+          Text('No profiles', style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: 8),
-          Text(
-            'Create a new profile to get started',
-            style: TextStyle(color: Colors.white54),
-          ),
+          Text('Create a new profile to get started', style: TextStyle(color: Colors.white54)),
           const SizedBox(height: 24),
-          FilledButton.icon(
-            onPressed: () => _createProfile(context, context.read<AppController>()),
-            icon: const Icon(Icons.add),
-            label: const Text('Create Profile'),
-          ),
+          FilledButton.icon(onPressed: () => _createProfile(context, context.read<AppController>()), icon: const Icon(Icons.add), label: const Text('Create Profile')),
         ],
       ),
     );
@@ -91,20 +59,13 @@ class ProfilesScreen extends StatelessWidget {
       itemBuilder: (context, index) {
         final profile = controller.profiles[index];
         final isActive = controller.activeProfile?.id == profile.id;
-        return ProfileCard(
-          profile: profile,
-          isActive: isActive,
-          onTap: () => _showProfileActions(context, controller, profile),
-        );
+        return ProfileCard(profile: profile, isActive: isActive, onTap: () => _showProfileActions(context, controller, profile));
       },
     );
   }
 
   Future<void> _createProfile(BuildContext context, AppController controller) async {
-    final result = await showDialog<ProfileEditorResult>(
-      context: context,
-      builder: (ctx) => const ProfileEditorDialog(),
-    );
+    final result = await showDialog<ProfileEditorResult>(context: context, builder: (ctx) => const ProfileEditorDialog());
 
     if (result != null && context.mounted) {
       controller.createProfile(
@@ -118,11 +79,7 @@ class ProfilesScreen extends StatelessWidget {
     }
   }
 
-  void _showProfileActions(
-    BuildContext context,
-    AppController controller,
-    Profile profile,
-  ) {
+  void _showProfileActions(BuildContext context, AppController controller, Profile profile) {
     showModalBottomSheet(
       context: context,
       builder: (ctx) => SafeArea(
@@ -163,12 +120,7 @@ class ProfilesScreen extends StatelessWidget {
                   Navigator.pop(ctx);
                   final confirmed = await showDialog<bool>(
                     context: context,
-                    builder: (ctx) => ConfirmDialog(
-                      title: 'Delete Profile',
-                      message: 'Are you sure you want to delete "${profile.name}"?',
-                      confirmLabel: 'Delete',
-                      confirmColor: Colors.red,
-                    ),
+                    builder: (ctx) => ConfirmDialog(title: 'Delete Profile', message: 'Are you sure you want to delete "${profile.name}"?', confirmLabel: 'Delete', confirmColor: Colors.red),
                   );
                   if (confirmed == true && context.mounted) {
                     controller.deleteProfile(profile.id);
@@ -181,11 +133,7 @@ class ProfilesScreen extends StatelessWidget {
     );
   }
 
-  void _editProfile(
-    BuildContext context,
-    AppController controller,
-    Profile profile,
-  ) async {
+  void _editProfile(BuildContext context, AppController controller, Profile profile) async {
     final result = await showDialog<ProfileEditorResult>(
       context: context,
       builder: (ctx) => ProfileEditorDialog(profile: profile),
@@ -217,10 +165,7 @@ class ProfilesScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                'Copy this JSON and share it:',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
-              ),
+              Text('Copy this JSON and share it:', style: TextStyle(color: Colors.white.withValues(alpha: 0.7))),
               const SizedBox(height: 8),
               Expanded(
                 child: Container(
@@ -228,18 +173,10 @@ class ProfilesScreen extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.3),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.1),
-                    ),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
                   ),
                   child: SingleChildScrollView(
-                    child: SelectableText(
-                      json,
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 12,
-                      ),
-                    ),
+                    child: SelectableText(json, style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
                   ),
                 ),
               ),
@@ -247,16 +184,11 @@ class ProfilesScreen extends StatelessWidget {
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
           FilledButton.icon(
             onPressed: () {
               Clipboard.setData(ClipboardData(text: json));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Copied to clipboard')),
-              );
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Copied to clipboard')));
               Navigator.pop(ctx);
             },
             icon: const Icon(Icons.copy, size: 16),
@@ -279,10 +211,7 @@ class ProfilesScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                'Paste a JSON array of profiles:',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
-              ),
+              Text('Paste a JSON array of profiles:', style: TextStyle(color: Colors.white.withValues(alpha: 0.7))),
               const SizedBox(height: 8),
               Expanded(
                 child: TextField(
@@ -290,26 +219,15 @@ class ProfilesScreen extends StatelessWidget {
                   maxLines: null,
                   expands: true,
                   textAlignVertical: TextAlignVertical.top,
-                  style: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 12,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: '[{"name": "My Profile", ...}]',
-                    border: const OutlineInputBorder(),
-                    filled: true,
-                    fillColor: Colors.black.withValues(alpha: 0.3),
-                  ),
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                  decoration: InputDecoration(hintText: '[{"name": "My Profile", ...}]', border: const OutlineInputBorder(), filled: true, fillColor: Colors.black.withValues(alpha: 0.3)),
                 ),
               ),
             ],
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           FilledButton(
             onPressed: () {
               final json = textController.text.trim();
@@ -317,16 +235,9 @@ class ProfilesScreen extends StatelessWidget {
               final count = controller.importProfiles(json);
               Navigator.pop(ctx);
               if (count > 0) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Imported $count profile(s)')),
-                );
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Imported $count profile(s)')));
               } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('No profiles imported — check JSON format'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No profiles imported — check JSON format'), backgroundColor: Colors.red));
               }
             },
             child: const Text('Import'),
@@ -356,45 +267,27 @@ class _ApplyProgressOverlay extends StatelessWidget {
           child: Container(
             constraints: const BoxConstraints(maxWidth: 360),
             padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.circular(20),
-            ),
+            decoration: BoxDecoration(color: Theme.of(context).colorScheme.surface, borderRadius: BorderRadius.circular(20)),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                SizedBox(
-                  width: 56,
-                  height: 56,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 4,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                ),
+                SizedBox(width: 56, height: 56, child: CircularProgressIndicator(strokeWidth: 4, valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.primary))),
                 const SizedBox(height: 24),
                 Text(
                   step,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
                 Text(
                   message,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
-                      ),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7)),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 20),
                 Text(
                   'This may take up to 60 seconds\nwhile Waydroid restarts',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
-                      ),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4)),
                   textAlign: TextAlign.center,
                 ),
               ],

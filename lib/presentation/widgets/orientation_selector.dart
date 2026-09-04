@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-
-import '../../domain/enums/orientation.dart';
+import 'package:waydroid_profile_manager/domain/enums/orientation.dart';
 
 class OrientationSelector extends StatelessWidget {
   final WaydroidOrientation selected;

@@ -2,9 +2,9 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:system_tray/system_tray.dart';
+import 'package:waydroid_profile_manager/domain/entities/profile.dart';
+import 'package:waydroid_profile_manager/domain/enums/orientation.dart';
 
-import '../../domain/entities/profile.dart';
-import '../../domain/enums/orientation.dart';
 
 /// Callback type for when a profile is selected from the tray.
 typedef OnProfileSelected = void Function(
