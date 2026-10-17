@@ -125,7 +125,7 @@ Priority: optional
 Architecture: amd64
 Maintainer: Eduar2TC <Eduar2TC@users.noreply.github.com>
 Installed-Size: ${installed_size}
-Depends: libgtk-3-0
+Depends: libgtk-3-0, libayatana-appindicator3-1
 Description: Waydroid profile manager with display profiles
  Applies resolution, density and rotation profiles to a running Waydroid
  session, restoring the previous configuration on reset.
