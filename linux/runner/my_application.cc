@@ -75,14 +75,14 @@ static void my_application_activate(GApplication* application) {
     }
   }
 
-  // Force CSD (header bar) unconditionally so the custom `decoration`
-  // CSS (rounded corners) always applies, regardless of window manager.
-  GtkHeaderBar* header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
-  gtk_widget_show(GTK_WIDGET(header_bar));
-  gtk_header_bar_set_title(header_bar, "waydroid_profile_manager");
-  gtk_header_bar_set_show_close_button(header_bar, TRUE);
-  gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
-
+  // Do NOT set a CSD header bar here. KWin (KDE Plasma) always draws its own
+  // server-side title bar for this window, and forcing a GTK header bar made
+  // TWO title bars stack up (icon + min/max/close duplicated). Letting the
+  // window manager provide the title bar yields exactly one bar with the app
+  // icon, and the rounded corners still come from `window.background` in the
+  // CSS below (rounded at the bottom, square at the top where the title bar
+  // sits — the KDE-native look). The window title is what KWin shows there.
+  gtk_window_set_title(window, "Waydroid Profile Manager");
   gtk_window_set_default_size(window, 500, 700);
 
   GdkGeometry hints;
