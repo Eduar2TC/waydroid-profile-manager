@@ -2,6 +2,16 @@
 
 Desktop application for Linux that manages device profiles for **Waydroid**, the Android compatibility layer. It allows resizing the Waydroid screen to custom dimensions — something Waydroid does not support natively.
 
+## Screenshots
+
+| Dashboard | Profiles |
+|-----------|----------|
+| ![Dashboard screenshot](linux/packaging/screenshots/dashboard.png) | ![Profiles screenshot](linux/packaging/screenshots/profiles.png) |
+
+| Settings | Logs |
+|----------|------|
+| ![Settings screenshot](linux/packaging/screenshots/settings.png) | ![Logs screenshot](linux/packaging/screenshots/logs.png) |
+
 ## The Problem
 
 Waydroid runs Android apps on Linux, but it **does not allow resizing its screen window** to arbitrary dimensions. The default fixed resolution forces users to deal with:

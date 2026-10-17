@@ -29,6 +29,24 @@
     </ul>
   </description>
   <launchable type="desktop-id">com.waydroidpm.waydroid_profile_manager.desktop</launchable>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/Eduar2TC/waydroid-wrapper/main/linux/packaging/screenshots/dashboard.png</image>
+      <caption>Dashboard with Waydroid status, active profile and orientation selector</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/Eduar2TC/waydroid-wrapper/main/linux/packaging/screenshots/profiles.png</image>
+      <caption>Built-in and custom resolution profiles</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/Eduar2TC/waydroid-wrapper/main/linux/packaging/screenshots/settings.png</image>
+      <caption>Installation and application settings</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/Eduar2TC/waydroid-wrapper/main/linux/packaging/screenshots/logs.png</image>
+      <caption>Live log of status updates and applied actions</caption>
+    </screenshot>
+  </screenshots>
   <provides>
     <binary>waydroid_profile_manager</binary>
   </provides>
