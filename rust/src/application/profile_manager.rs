@@ -61,6 +61,7 @@ impl ProfileManager {
     }
 
     /// Update an existing profile.
+    #[allow(clippy::too_many_arguments)]
     pub fn update_profile(
         &mut self,
         id: &str,

@@ -19,6 +19,12 @@ pub struct WaydroidManager {
     profile_manager: ProfileManager,
 }
 
+impl Default for WaydroidManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WaydroidManager {
     /// Create a new WaydroidManager with real backend.
     pub fn new() -> Self {
@@ -94,6 +100,7 @@ impl WaydroidManager {
     }
 
     /// Update an existing profile.
+    #[allow(clippy::too_many_arguments)]
     pub fn update_profile(
         &mut self,
         id: String,
@@ -161,7 +168,7 @@ impl WaydroidManager {
         apply_profile(
             self.backend.as_ref(),
             &self.repository,
-            &profile,
+            profile,
             orientation,
             None,
         )
@@ -188,7 +195,7 @@ impl WaydroidManager {
         apply_profile(
             self.backend.as_ref(),
             &self.repository,
-            &profile,
+            profile,
             orientation,
             Some(progress_callback),
         )

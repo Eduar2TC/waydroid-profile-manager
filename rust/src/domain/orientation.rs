@@ -3,8 +3,10 @@ use serde::{Deserialize, Serialize};
 /// Screen orientation for Waydroid profiles.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum Orientation {
     Landscape,
+    #[default]
     Portrait,
 }
 
@@ -55,11 +57,6 @@ impl std::fmt::Display for Orientation {
     }
 }
 
-impl Default for Orientation {
-    fn default() -> Self {
-        Orientation::Portrait
-    }
-}
 
 #[cfg(test)]
 mod tests {

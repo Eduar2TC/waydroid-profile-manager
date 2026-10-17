@@ -90,8 +90,13 @@ pub extern "C" fn wpm_get_active_profile() -> *mut c_char {
 
 /// Create a new profile.
 /// Returns 0 on success, -1 on error.
+///
+/// # Safety
+/// All pointer arguments must be valid NUL-terminated C strings
+/// (or null for optional ones). Null-dereference-safe but the caller
+/// must guarantee the pointers outlive the call.
 #[no_mangle]
-pub extern "C" fn wpm_create_profile(
+pub unsafe extern "C" fn wpm_create_profile(
     name: *const c_char,
     description: *const c_char,
     base_width: u32,
@@ -126,8 +131,11 @@ pub extern "C" fn wpm_create_profile(
 
 /// Update an existing profile by ID.
 /// Returns 0 on success, -1 on error.
+///
+/// # Safety
+/// All pointer arguments must be valid NUL-terminated C strings.
 #[no_mangle]
-pub extern "C" fn wpm_update_profile(
+pub unsafe extern "C" fn wpm_update_profile(
     id: *const c_char,
     name: *const c_char,
     description: *const c_char,
@@ -172,8 +180,11 @@ pub extern "C" fn wpm_update_profile(
 
 /// Delete a profile by ID.
 /// Returns 0 on success, -1 on error.
+///
+/// # Safety
+/// `id` must be a valid NUL-terminated C string or null.
 #[no_mangle]
-pub extern "C" fn wpm_delete_profile(id: *const c_char) -> i32 {
+pub unsafe extern "C" fn wpm_delete_profile(id: *const c_char) -> i32 {
     let id = unsafe { cstr_to_string(id) };
 
     let mut manager = match MANAGER.lock() {
@@ -195,8 +206,11 @@ pub extern "C" fn wpm_delete_profile(id: *const c_char) -> i32 {
 /// Duplicate a profile.
 /// Returns the new profile ID as JSON string.
 /// Caller must free the returned string with wpm_free_string.
+///
+/// # Safety
+/// Both pointer arguments must be valid NUL-terminated C strings or null.
 #[no_mangle]
-pub extern "C" fn wpm_duplicate_profile(id: *const c_char, new_name: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn wpm_duplicate_profile(id: *const c_char, new_name: *const c_char) -> *mut c_char {
     let id = unsafe { cstr_to_string(id) };
     let new_name = unsafe { optional_cstr(new_name) };
 
@@ -222,8 +236,11 @@ pub extern "C" fn wpm_duplicate_profile(id: *const c_char, new_name: *const c_ch
 /// Apply a profile.
 /// Returns JSON: {"success": bool, "message": string}
 /// Caller must free the returned string with wpm_free_string.
+///
+/// # Safety
+/// Both pointer arguments must be valid NUL-terminated C strings.
 #[no_mangle]
-pub extern "C" fn wpm_apply_profile(profile_id: *const c_char, orientation: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn wpm_apply_profile(profile_id: *const c_char, orientation: *const c_char) -> *mut c_char {
     let profile_id = unsafe { cstr_to_string(profile_id) };
     let orientation = unsafe { cstr_to_string(orientation) };
 
@@ -254,8 +271,11 @@ pub extern "C" fn wpm_apply_profile(profile_id: *const c_char, orientation: *con
 /// Progress can be polled via wpm_get_apply_progress().
 /// Check wpm_is_apply_done() to know when it's finished.
 /// Returns 0 on success (started), -1 on error.
+///
+/// # Safety
+/// Both pointer arguments must be valid NUL-terminated C strings.
 #[no_mangle]
-pub extern "C" fn wpm_apply_profile_async(
+pub unsafe extern "C" fn wpm_apply_profile_async(
     profile_id: *const c_char,
     orientation: *const c_char,
 ) -> i32 {
@@ -436,8 +456,11 @@ pub extern "C" fn wpm_export_profiles() -> *mut c_char {
 
 /// Import profiles from a JSON string.
 /// Returns the number of profiles imported, or -1 on error.
+///
+/// # Safety
+/// `json` must be a valid NUL-terminated C string.
 #[no_mangle]
-pub extern "C" fn wpm_import_profiles(json: *const c_char) -> i32 {
+pub unsafe extern "C" fn wpm_import_profiles(json: *const c_char) -> i32 {
     let json_str = unsafe { cstr_to_string(json) };
     if json_str.is_empty() {
         return -1;
@@ -482,8 +505,12 @@ pub extern "C" fn wpm_import_profiles(json: *const c_char) -> i32 {
 }
 
 /// Free a string returned by this API.
+///
+/// # Safety
+/// `s` must be a pointer previously returned by this API, and must not
+/// be freed more than once or used after freeing.
 #[no_mangle]
-pub extern "C" fn wpm_free_string(s: *mut c_char) {
+pub unsafe extern "C" fn wpm_free_string(s: *mut c_char) {
     if !s.is_null() {
         unsafe {
             drop(CString::from_raw(s));

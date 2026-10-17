@@ -19,7 +19,7 @@ impl AppLogger {
                 .append(true)
                 .open(path)
                 .ok()
-                .map(|f| Mutex::new(f))
+                .map(Mutex::new)
         });
 
         Self {

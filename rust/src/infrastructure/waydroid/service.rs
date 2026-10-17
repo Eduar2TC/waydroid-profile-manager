@@ -25,6 +25,8 @@ pub struct FakeState {
     pub commands_executed: Vec<String>,
     pub session_start_should_fail: bool,
     pub set_prop_should_fail: bool,
+    /// When false, shell_command fails (simulates settings provider not ready).
+    pub shell_should_fail: bool,
 }
 
 impl FakeWaydroidBackend {
@@ -39,6 +41,7 @@ impl FakeWaydroidBackend {
                 commands_executed: Vec::new(),
                 session_start_should_fail: false,
                 set_prop_should_fail: false,
+                shell_should_fail: false,
             }),
         }
     }
@@ -60,6 +63,12 @@ impl FakeWaydroidBackend {
             state.session = SessionStatus::Stopped;
         }
         fake
+    }
+}
+
+impl Default for FakeWaydroidBackend {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -95,7 +104,6 @@ impl WaydroidBackend for FakeWaydroidBackend {
         state
             .commands_executed
             .push(format!("prop set {} {}", key, value));
-
         if state.set_prop_should_fail {
             return Ok(CommandResult::failure(
                 Some(1),
@@ -111,6 +119,11 @@ impl WaydroidBackend for FakeWaydroidBackend {
             String::new(),
             Duration::from_millis(10),
         ))
+    }
+
+    fn get_prop(&self, key: &str) -> Option<String> {
+        let state = self.state.lock().unwrap();
+        state.props.get(key).cloned()
     }
 
     fn session_start(&self) -> anyhow::Result<CommandResult> {
@@ -174,6 +187,14 @@ impl WaydroidBackend for FakeWaydroidBackend {
         state
             .commands_executed
             .push(format!("shell {}", args.join(" ")));
+        if state.shell_should_fail {
+            return Ok(CommandResult::failure(
+                Some(1),
+                String::new(),
+                "Fake shell error".to_string(),
+                Duration::from_millis(10),
+            ));
+        }
         Ok(CommandResult::success(
             String::new(),
             String::new(),
@@ -194,6 +215,11 @@ impl WaydroidBackend for FakeWaydroidBackend {
     fn wait_for_ui(&self, _timeout_secs: u64) -> bool {
         let state = self.state.lock().unwrap();
         state.ui == UiStatus::Open
+    }
+
+    fn wait_for_shell_ready(&self, _timeout_secs: u64) -> bool {
+        let state = self.state.lock().unwrap();
+        !state.shell_should_fail
     }
 
     fn container_stop_graceful(&self, _timeout_secs: u32) -> anyhow::Result<()> {

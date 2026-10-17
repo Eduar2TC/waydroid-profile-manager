@@ -87,6 +87,12 @@ impl RealWaydroidBackend {
     }
 }
 
+impl Default for RealWaydroidBackend {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WaydroidBackend for RealWaydroidBackend {
     fn check_installed(&self) -> bool {
         ProcessRunner::program_exists(&self.waydroid_path)
@@ -124,6 +130,15 @@ impl WaydroidBackend for RealWaydroidBackend {
         self.waydroid_cmd(&["prop", "set", key, value])
     }
 
+    fn get_prop(&self, key: &str) -> Option<String> {
+        match self.waydroid_cmd(&["prop", "get", key]) {
+            Ok(result) if result.success && !result.stdout.trim().is_empty() => {
+                Some(result.stdout.trim().to_string())
+            }
+            _ => None,
+        }
+    }
+
     fn session_start(&self) -> anyhow::Result<CommandResult> {
         self.waydroid_cmd(&["session", "start"])
     }
@@ -146,7 +161,7 @@ impl WaydroidBackend for RealWaydroidBackend {
         // First try graceful close via pgrep + kill
         match self.runner.run("pgrep", &["-f", "waydroid show-full-ui"]) {
             Ok(result) if result.success => {
-                let pids: Vec<&str> = result.stdout.trim().split_whitespace().collect();
+                let pids: Vec<&str> = result.stdout.split_whitespace().collect();
                 for pid in pids {
                     if !pid.is_empty() {
                         let _ = self.runner.run("kill", &[pid]);
@@ -224,6 +239,25 @@ impl WaydroidBackend for RealWaydroidBackend {
             let (container, session) = self.parse_status_output();
             if container == ContainerStatus::Stopped && session == SessionStatus::Stopped {
                 return true;
+            }
+            if start.elapsed() >= timeout {
+                return false;
+            }
+            std::thread::sleep(poll_interval);
+        }
+    }
+
+    fn wait_for_shell_ready(&self, timeout_secs: u64) -> bool {
+        let start = Instant::now();
+        let timeout = Duration::from_secs(timeout_secs);
+        let poll_interval = Duration::from_millis(1000);
+
+        loop {
+            // Probe the settings provider with a cheap read: success means
+            // the Android settings provider is ready for shell commands.
+            match self.shell_command(&["cmd", "settings", "get", "system", "user_rotation"]) {
+                Ok(result) if result.success => return true,
+                _ => {}
             }
             if start.elapsed() >= timeout {
                 return false;

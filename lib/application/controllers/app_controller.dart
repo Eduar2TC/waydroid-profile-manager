@@ -18,9 +18,8 @@ class AppController extends ChangeNotifier {
   WaydroidOrientation _selectedOrientation = WaydroidOrientation.portrait;
   bool _isApplying = false;
   String? _error;
-  List<String> _logs = [];
+  final List<String> _logs = [];
   ApplyProgress? _applyProgress;
-  Timer? _progressTimer;
 
   AppController(this._service);
 
@@ -89,7 +88,7 @@ class AppController extends ChangeNotifier {
     if (started) {
       // Poll for progress until done
       final completer = Completer<Map<String, dynamic>>();
-      _progressTimer = Timer.periodic(const Duration(milliseconds: 300), (timer) {
+      Timer.periodic(const Duration(milliseconds: 300), (timer) {
         final progress = _service.getApplyProgress();
         if (progress != null) {
           _applyProgress = progress;
@@ -99,7 +98,6 @@ class AppController extends ChangeNotifier {
 
         if (_service.isApplyDone()) {
           timer.cancel();
-          _progressTimer = null;
           final finalProgress = _service.getApplyProgress();
           final success = finalProgress?.success ?? false;
           final message = finalProgress?.message ?? 'Unknown result';
@@ -119,7 +117,7 @@ class AppController extends ChangeNotifier {
           _addLog('✓ Profile applied successfully');
         } else {
           _error = result['message'] as String? ?? 'Failed to apply profile';
-          _addLog('✗ ${_error}');
+          _addLog('✗ $_error');
         }
       } catch (e) {
         _error = e.toString();
@@ -140,7 +138,7 @@ class AppController extends ChangeNotifier {
           _addLog('✓ Profile applied successfully');
         } else {
           _error = result['message'] as String? ?? 'Failed to apply profile';
-          _addLog('✗ ${_error}');
+          _addLog('✗ $_error');
         }
       } catch (e) {
         _error = e.toString();

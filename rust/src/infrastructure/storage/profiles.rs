@@ -24,19 +24,12 @@ pub struct WaydroidBackup {
 
 /// Application state file.
 #[derive(Debug, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct AppState {
     pub active_profile_id: Option<String>,
     pub backup: Option<WaydroidBackup>,
 }
 
-impl Default for AppState {
-    fn default() -> Self {
-        Self {
-            active_profile_id: None,
-            backup: None,
-        }
-    }
-}
 
 /// Repository for profile persistence.
 pub struct ProfileRepository {
@@ -110,6 +103,12 @@ impl ProfileRepository {
         let json = serde_json::to_string_pretty(state)?;
         fs::write(self.state_path(), json)?;
         Ok(())
+    }
+}
+
+impl Default for ProfileRepository {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

@@ -14,6 +14,8 @@ pub trait WaydroidBackend: Send + Sync {
     fn get_full_status(&self) -> WaydroidStatus;
 
     fn set_prop(&self, key: &str, value: &str) -> anyhow::Result<CommandResult>;
+    /// Read a Waydroid property (e.g. persist.waydroid.width). Returns None if unavailable.
+    fn get_prop(&self, key: &str) -> Option<String>;
     fn session_start(&self) -> anyhow::Result<CommandResult>;
     fn session_stop(&self) -> anyhow::Result<CommandResult>;
     fn show_full_ui(&self) -> anyhow::Result<CommandResult>;
@@ -22,6 +24,9 @@ pub trait WaydroidBackend: Send + Sync {
     fn wait_for_session(&self, timeout_secs: u64) -> bool;
     fn wait_for_session_stopped(&self, timeout_secs: u64) -> bool;
     fn wait_for_ui(&self, timeout_secs: u64) -> bool;
+    /// Poll until a `shell_command` succeeds (settings provider ready).
+    /// Returns true if ready within timeout, false otherwise.
+    fn wait_for_shell_ready(&self, timeout_secs: u64) -> bool;
 
     /// Graceful container stop using lxc-stop --timeout (sends SIGTERM first).
     /// Avoids the SIGABRT crash that lxc-stop -k causes in the GPU composer.

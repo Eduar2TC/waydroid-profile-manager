@@ -13,7 +13,6 @@ import 'waydroid_service.dart';
 class MockWaydroidService implements WaydroidService {
   List<Profile> _profiles = [];
   Profile? _activeProfile;
-  bool _initialized = false;
   final Random _random = Random();
 
   MockWaydroidService() {
@@ -100,7 +99,6 @@ class MockWaydroidService implements WaydroidService {
 
   @override
   bool init() {
-    _initialized = true;
     return true;
   }
 

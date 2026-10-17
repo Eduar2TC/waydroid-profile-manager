@@ -22,6 +22,8 @@ pub struct ApplyResult {
 /// CRITICAL: `waydroid prop set` only works when the session is RUNNING.
 /// Props must be set BEFORE stopping, so they're saved to the config file.
 /// The new session then reads the updated config on startup.
+// 8 args: use case con callback de progreso — la firma FFI lo requiere.
+#[allow(clippy::type_complexity)]
 pub fn apply_profile(
     backend: &dyn WaydroidBackend,
     repository: &ProfileRepository,
@@ -82,7 +84,7 @@ pub fn apply_profile(
     if let Err(e) = backend.close_full_ui() {
         log::warn!("Failed to close UI (may not be open): {}", e);
     }
-    std::thread::sleep(std::time::Duration::from_secs(2));
+    std::thread::sleep(std::time::Duration::from_secs(1));
     emit_progress("ClosingUi", "UI closed", true);
 
     // Step 5: Set properties WHILE SESSION IS STILL RUNNING.
@@ -136,8 +138,9 @@ pub fn apply_profile(
             true,
         );
     }
-    // Wait for GPU crash to settle — Mesa/libEGL SIGABRT + coredump handler
-    std::thread::sleep(std::time::Duration::from_secs(8));
+    // Short settle for the GPU crash (SIGABRT in composer@2.1-service) and
+    // coredump handler. Cannot be polled — the crash is asynchronous.
+    std::thread::sleep(std::time::Duration::from_secs(3));
     emit_progress("RestartingSession", "Session stopped", true);
 
     // Step 7: Start session (reads the new props from config on startup)
@@ -157,10 +160,15 @@ pub fn apply_profile(
             error: Some("Timeout".to_string()),
         };
     }
-    // Wait for Android services (surfaceflinger, composer, platform, settings provider)
-    // to fully initialize. After a nohup session start, the settings provider
-    // inside the container may take extra time to become available via D-Bus.
-    std::thread::sleep(std::time::Duration::from_secs(10));
+    // Wait until the Android settings provider accepts shell commands
+    // (polls `cmd settings get` until it succeeds — replaces a fixed 10s sleep).
+    if !backend.wait_for_shell_ready(30) {
+        emit_progress(
+            "RestartingSession",
+            "Warning: shell not ready after 30s, continuing anyway",
+            true,
+        );
+    }
     emit_progress("RestartingSession", "Session running", true);
 
     // Step 8: Open UI (window is created with new resolution from props)
@@ -183,9 +191,14 @@ pub fn apply_profile(
     emit_progress("OpeningUi", "UI opened", true);
 
     // Wait for the platform service and settings provider to settle
-    // after UI creation. The settings provider must be ready for
-    // `cmd settings put` to actually apply rotation.
-    std::thread::sleep(std::time::Duration::from_secs(3));
+    // after UI creation. Polls the settings provider instead of a fixed sleep.
+    if !backend.wait_for_shell_ready(15) {
+        emit_progress(
+            "OpeningUi",
+            "Warning: settings provider not ready, continuing anyway",
+            true,
+        );
+    }
 
     // Step 9: Apply internal Android display resolution via wm size.
     //
@@ -242,33 +255,52 @@ pub fn apply_profile(
 }
 
 /// Save current Waydroid configuration as backup.
+///
+/// Captures width/height/density props AND rotation settings so that
+/// `reset` can fully restore the previous configuration.
 fn save_backup(
     backend: &dyn WaydroidBackend,
     repository: &ProfileRepository,
 ) -> anyhow::Result<()> {
     use chrono::Utc;
 
-    let get_prop = |key: &str| -> Option<String> {
-        backend
-            .shell_command(&["cmd", "settings", "get", "system", key])
-            .ok()
-            .filter(|r| r.success)
-            .map(|r| r.stdout.trim().to_string())
-    };
-
+    // Read current props (host window + density) BEFORE modifying anything.
+    // get_prop returns None if the prop is not set — that's fine: reset will
+    // skip restoring it and Waydroid keeps its default.
     let backup = WaydroidBackup {
-        width: None,
-        height: None,
-        density: None,
-        accelerometer_rotation: get_prop("accelerometer_rotation"),
-        user_rotation: get_prop("user_rotation"),
+        width: backend.get_prop("persist.waydroid.width"),
+        height: backend.get_prop("persist.waydroid.height"),
+        density: backend.get_prop("persist.waydroid.density"),
+        accelerometer_rotation: read_setting(backend, "accelerometer_rotation"),
+        user_rotation: read_setting(backend, "user_rotation"),
         timestamp: Utc::now().to_rfc3339(),
     };
 
+    // Only overwrite the existing backup if there is no backup yet.
+    // This way the ORIGINAL pre-first-apply configuration is preserved
+    // even after applying multiple profiles in a row.
     let mut state = repository.load_state()?;
-    state.backup = Some(backup);
-    repository.save_state(&state)?;
+    if state.backup.is_none() {
+        state.backup = Some(backup);
+        repository.save_state(&state)?;
+    } else {
+        // Update timestamp only — keep the original values
+        if let Some(existing) = state.backup.as_mut() {
+            existing.timestamp = Utc::now().to_rfc3339();
+        }
+        repository.save_state(&state)?;
+    }
     Ok(())
+}
+
+/// Read an Android system setting via shell (settings get).
+fn read_setting(backend: &dyn WaydroidBackend, key: &str) -> Option<String> {
+    backend
+        .shell_command(&["cmd", "settings", "get", "system", key])
+        .ok()
+        .filter(|r| r.success)
+        .map(|r| r.stdout.trim().to_string())
+        .filter(|s| !s.is_empty() && s != "null")
 }
 
 #[cfg(test)]
