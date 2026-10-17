@@ -51,6 +51,16 @@
     <binary>waydroid_profile_manager</binary>
   </provides>
   <releases>
+    <release version="1.0.1" date="2026-10-17">
+      <description>
+        <p>Fixes on KDE Plasma: the window no longer shows a duplicated title
+        bar (the GTK header bar was stacked on top of the window manager
+        decoration); the window manager title bar now shows the app icon and
+        a friendly title. The tarball installer points the menu entry at the
+        absolute binary path so it launches even when ~/.local/bin is not in
+        the session PATH yet.</p>
+      </description>
+    </release>
     <release version="1.0.0" date="2026-10-17"/>
   </releases>
   <content_rating type="oars-1.1"/>
