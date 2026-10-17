@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  rust:
+    name: Rust tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            rust/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('rust/Cargo.lock') }}
+
+      - name: Clippy (warnings as errors)
+        working-directory: rust
+        run: cargo clippy -- -D warnings
+
+      - name: Tests (excluding host-dependent waydroid CLI tests)
+        working-directory: rust
+        # The tests under infrastructure::waydroid::cli assert that waydroid is
+        # installed on the machine, which is not true on a bare runner.
+        run: >-
+          cargo test --
+          --skip infrastructure::waydroid::cli::tests::detect_waydroid_installed
+          --skip infrastructure::waydroid::cli::tests::get_full_status_works
+          --skip infrastructure::waydroid::cli::tests::parse_status_output_parses_correctly
+          --skip infrastructure::waydroid::cli::tests::set_prop_works
+
+  flutter:
+    name: Flutter tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Pub get
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze --fatal-infos
+
+      - name: Tests
+        run: flutter test

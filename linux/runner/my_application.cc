@@ -1,6 +1,8 @@
 #include "my_application.h"
 
 #include <flutter_linux/flutter_linux.h>
+
+#include <unistd.h>
 #ifdef GDK_WINDOWING_X11
 #include <gdk/gdkx.h>
 #endif
@@ -31,6 +33,24 @@ struct _MyApplication {
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 
+// Absolute path of the app icon inside the running bundle, resolved from
+// /proc/self/exe so it works no matter where the bundle lives. Returns NULL
+// when the icon is not shipped (e.g. an older bundle).
+static gchar* bundle_icon_path(void) {
+  char exe[4096];
+  ssize_t len = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+  if (len <= 0) return nullptr;
+  exe[len] = '\0';
+  g_autofree gchar* dir = g_path_get_dirname(exe);
+  gchar* path = g_build_filename(dir, "data", "flutter_assets", "assets",
+                                 "icon.png", nullptr);
+  if (!g_file_test(path, G_FILE_TEST_IS_REGULAR)) {
+    g_clear_pointer(&path, g_free);
+    return nullptr;
+  }
+  return path;
+}
+
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
@@ -41,6 +61,19 @@ static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
+
+  // Window icon (titlebar, Alt-Tab, taskbar) from the bundled icon. The
+  // launcher/menu icon is a separate thing: it comes from the .desktop file
+  // and the hicolor icons shipped by the release (StartupWMClass below must
+  // match APPLICATION_ID so both refer to the same window).
+  g_autofree gchar* icon_path = bundle_icon_path();
+  if (icon_path != nullptr) {
+    g_autoptr(GError) icon_error = nullptr;
+    if (!gtk_window_set_icon_from_file(window, icon_path, &icon_error)) {
+      g_warning("Failed to load window icon %s: %s", icon_path,
+                icon_error->message);
+    }
+  }
 
   // Force CSD (header bar) unconditionally so the custom `decoration`
   // CSS (rounded corners) always applies, regardless of window manager.

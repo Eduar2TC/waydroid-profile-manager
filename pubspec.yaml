@@ -1,5 +1,7 @@
 name: waydroid_profile_manager
-description: "A new Flutter project."
+description: "Apply resolution, density and orientation profiles to a Waydroid session, with backup and restore."
+homepage: https://github.com/Eduar2TC/waydroid-wrapper
+repository: https://github.com/Eduar2TC/waydroid-wrapper
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -57,6 +59,10 @@ flutter:
 
   assets:
     - assets/tray_icon.png
+    # App icon: also used by the Linux runner as the window icon
+    # (see linux/runner/my_application.cc) and as the source for the
+    # .desktop / hicolor icons shipped in releases.
+    - assets/icon.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:

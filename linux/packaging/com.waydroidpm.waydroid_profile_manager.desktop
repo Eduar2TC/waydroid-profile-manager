@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Waydroid Profile Manager
+GenericName=Waydroid display profiles
+Comment=Apply resolution, density and rotation profiles to Waydroid
+Exec=waydroid_profile_manager
+Icon=waydroidpm
+Terminal=false
+Categories=Utility;
+Keywords=waydroid;android;resolution;dpi;rotation;profile;
+StartupNotify=true
+StartupWMClass=com.waydroidpm.waydroid_profile_manager

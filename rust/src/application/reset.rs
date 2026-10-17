@@ -1,5 +1,4 @@
-
-use crate::domain::waydroid_status::SessionStatus;
+use crate::domain::waydroid_status::{SessionStatus, UiStatus};
 use crate::infrastructure::storage::profiles::{AppState, ProfileRepository};
 use crate::infrastructure::waydroid::backend_trait::WaydroidBackend;
 
@@ -41,31 +40,28 @@ pub fn reset_waydroid(
         }
     };
 
-    // Close UI
+    // Close UI — remember whether it was open so we only reopen what we closed.
+    let ui_was_open = backend.get_ui_status() == UiStatus::Open;
     let _ = backend.close_full_ui();
 
     let mut restored: Vec<&str> = Vec::new();
 
     // 1. Restore resolution and density props (host window config).
-    // `waydroid prop set` requires the session to be running.
+    // `waydroid prop set` requires the session to be running, and set_prop
+    // returns Ok(CommandResult) even when the CLI exits non-zero — only a
+    // command that reports success counts as restored.
     if let Some(ref width) = backup.width {
-        if backend.set_prop("persist.waydroid.width", width).is_ok() {
+        if set_prop_ok(backend, "persist.waydroid.width", width) {
             restored.push("width");
         }
     }
     if let Some(ref height) = backup.height {
-        if backend
-            .set_prop("persist.waydroid.height", height)
-            .is_ok()
-        {
+        if set_prop_ok(backend, "persist.waydroid.height", height) {
             restored.push("height");
         }
     }
     if let Some(ref density) = backup.density {
-        if backend
-            .set_prop("persist.waydroid.density", density)
-            .is_ok()
-        {
+        if set_prop_ok(backend, "persist.waydroid.density", density) {
             restored.push("density");
         }
     }
@@ -86,58 +82,99 @@ pub fn reset_waydroid(
         }
     }
 
-    // 3. Restore internal Android display resolution via wm size/density.
-    if let Some(ref width) = backup.width {
-        if let Some(ref height) = backup.height {
-            let _ = backend.shell_command(&["wm", "size", &format!("{}x{}", width, height)]);
+    // 3. Restore the internal Android display override captured before
+    // applying. `persist.waydroid.width/height` (host window) and `wm size`
+    // (internal display) are different values, so the backup records the
+    // actual wm override rather than reusing the window size. When no
+    // override was recorded, clear the one apply() left behind so the display
+    // returns to its physical size/density.
+    if let Some(ref size) = backup.wm_size {
+        if restore_shell(backend, &["wm", "size", size]) {
+            restored.push("wm size");
         }
+    } else {
+        restore_shell(backend, &["wm", "size", "reset"]);
     }
-    if let Some(ref density) = backup.density {
-        let _ = backend.shell_command(&["wm", "density", density]);
+    if let Some(ref density) = backup.wm_density {
+        if restore_shell(backend, &["wm", "density", density]) {
+            restored.push("wm density");
+        }
+    } else {
+        restore_shell(backend, &["wm", "density", "reset"]);
     }
 
     // 4. Restore rotation settings if available
+    let mut rotation_restored = false;
     if let Some(ref accel) = backup.accelerometer_rotation {
-        let _ = backend.shell_command(&[
-            "cmd",
-            "settings",
-            "put",
-            "system",
-            "accelerometer_rotation",
-            accel,
-        ]);
+        rotation_restored |= restore_shell(
+            backend,
+            &[
+                "cmd",
+                "settings",
+                "put",
+                "system",
+                "accelerometer_rotation",
+                accel,
+            ],
+        );
     }
 
     if let Some(ref rotation) = backup.user_rotation {
-        let _ = backend.shell_command(&[
-            "cmd",
-            "settings",
-            "put",
-            "system",
-            "user_rotation",
-            rotation,
-        ]);
+        rotation_restored |= restore_shell(
+            backend,
+            &["cmd", "settings", "put", "system", "user_rotation", rotation],
+        );
+    }
+    if rotation_restored {
+        restored.push("rotation");
     }
 
-    // 5. Open UI if it was open before
-    let _ = backend.show_full_ui();
+    // 5. Reopen the UI only if we closed an open one
+    if ui_was_open {
+        let _ = backend.show_full_ui();
+    }
 
-    // Clear active profile
+    // Clear active profile (this reset consumes the backup)
     let _ = repository.save_state(&AppState {
         active_profile_id: None,
         backup: None,
     });
 
-    let summary = if restored.is_empty() {
-        "Rotation settings restored".to_string()
+    let message = if restored.is_empty() {
+        "Nothing to restore".to_string()
     } else {
         format!("Restored: {}", restored.join(", "))
     };
 
     ResetResult {
         success: true,
-        message: summary,
+        message,
         error: None,
+    }
+}
+
+/// `set_prop` returns Ok(CommandResult) even when the CLI itself failed, so
+/// check `.success` before claiming a value was restored.
+fn set_prop_ok(backend: &dyn WaydroidBackend, key: &str, value: &str) -> bool {
+    matches!(backend.set_prop(key, value), Ok(result) if result.success)
+}
+
+/// Run a restore shell command; returns whether it succeeded.
+fn restore_shell(backend: &dyn WaydroidBackend, args: &[&str]) -> bool {
+    match backend.shell_command(args) {
+        Ok(result) if result.success => true,
+        Ok(result) => {
+            log::warn!(
+                "Reset: '{}' failed: {}",
+                args.join(" "),
+                result.stderr.trim()
+            );
+            false
+        }
+        Err(e) => {
+            log::warn!("Reset: '{}' errored: {}", args.join(" "), e);
+            false
+        }
     }
 }
 
@@ -160,6 +197,10 @@ mod tests {
                 width: Some("800".into()),
                 height: Some("600".into()),
                 density: Some("160".into()),
+                // Deliberately different from the host window size above: the
+                // internal display override is its own value.
+                wm_size: Some("480x800".into()),
+                wm_density: Some("120".into()),
                 accelerometer_rotation: Some("1".into()),
                 user_rotation: Some("0".into()),
                 timestamp: "2024-01-01T00:00:00Z".to_string(),
@@ -181,11 +222,24 @@ mod tests {
         assert_eq!(state.props["persist.waydroid.width"], "800");
         assert_eq!(state.props["persist.waydroid.height"], "600");
         assert_eq!(state.props["persist.waydroid.density"], "160");
+        // The captured wm override was restored (not the host window size)
+        assert!(state
+            .commands_executed
+            .iter()
+            .any(|c| c.contains("wm size 480x800")));
+        assert!(state
+            .commands_executed
+            .iter()
+            .any(|c| c.contains("wm density 120")));
         // Rotation was restored
         assert!(state
             .commands_executed
             .iter()
             .any(|c| c.contains("accelerometer_rotation")));
+        assert_eq!(
+            result.message,
+            "Restored: width, height, density, wm size, wm density, rotation"
+        );
         // State cleared
         drop(state);
         let final_state = repo.load_state().unwrap();
@@ -196,21 +250,53 @@ mod tests {
     #[test]
     fn reset_skips_missing_props() {
         let (backend, repo, _tmp) = setup_with_backup();
-        // Remove width/height/density to simulate old backup without them
+        // Remove everything to simulate an old backup without these fields
         {
             let mut st = repo.load_state().unwrap();
             if let Some(backup) = st.backup.as_mut() {
                 backup.width = None;
                 backup.height = None;
                 backup.density = None;
+                backup.wm_size = None;
+                backup.wm_density = None;
             }
             repo.save_state(&st).unwrap();
         }
         let result = reset_waydroid(&backend, &repo);
         assert!(result.success);
-        assert_eq!(result.message, "Rotation settings restored");
+        assert_eq!(result.message, "Restored: rotation");
         let state = backend.state.lock().unwrap();
-        assert!(!state.commands_executed.iter().any(|c| c.contains("wm size")));
+        // No host window size may leak into `wm size`: with no override
+        // recorded, apply()'s override must be cleared instead.
+        assert!(state
+            .commands_executed
+            .iter()
+            .any(|c| c.contains("wm size reset")));
+        assert!(state
+            .commands_executed
+            .iter()
+            .any(|c| c.contains("wm density reset")));
+        assert!(!state.commands_executed.iter().any(|c| {
+            (c.starts_with("shell wm size ") || c.starts_with("shell wm density "))
+                && !c.ends_with("reset")
+        }));
+        assert!(!state
+            .commands_executed
+            .iter()
+            .any(|c| c.starts_with("prop set")));
+    }
+
+    #[test]
+    fn reset_does_not_report_props_that_failed_to_restore() {
+        let (backend, repo, _tmp) = setup_with_backup();
+        {
+            // set_prop returns Ok(CommandResult) with success=false here
+            let mut state = backend.state.lock().unwrap();
+            state.set_prop_should_fail = true;
+        }
+        let result = reset_waydroid(&backend, &repo);
+        assert!(result.success);
+        assert_eq!(result.message, "Restored: wm size, wm density, rotation");
     }
 
     #[test]
@@ -219,8 +305,35 @@ mod tests {
         let result = reset_waydroid(&backend, &repo);
         assert!(result.success);
         let state = backend.state.lock().unwrap();
-        assert!(state.commands_executed.contains(&"container stop graceful".to_string()));
-        assert!(state.commands_executed.contains(&"container start".to_string()));
+        assert!(state
+            .commands_executed
+            .contains(&"container stop graceful".to_string()));
+        assert!(state
+            .commands_executed
+            .contains(&"container start".to_string()));
+    }
+
+    #[test]
+    fn reset_reopens_ui_only_if_it_was_open() {
+        let (backend, repo, _tmp) = setup_with_backup();
+        reset_waydroid(&backend, &repo);
+        {
+            let state = backend.state.lock().unwrap();
+            assert!(!state
+                .commands_executed
+                .contains(&"show-full-ui".to_string()));
+        }
+
+        let (backend, repo, _tmp) = setup_with_backup();
+        {
+            let mut state = backend.state.lock().unwrap();
+            state.ui = UiStatus::Open;
+        }
+        reset_waydroid(&backend, &repo);
+        let state = backend.state.lock().unwrap();
+        assert!(state
+            .commands_executed
+            .contains(&"show-full-ui".to_string()));
     }
 
     #[test]

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.waydroidpm.waydroid_profile_manager</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <name>Waydroid Profile Manager</name>
+  <summary>Apply resolution, density and orientation profiles to Waydroid</summary>
+  <developer id="com.waydroidpm">
+    <name>Eduar2TC</name>
+  </developer>
+  <url type="homepage">https://github.com/Eduar2TC/waydroid-wrapper</url>
+  <url type="bugtracker">https://github.com/Eduar2TC/waydroid-wrapper/issues</url>
+  <url type="vcs-browser">https://github.com/Eduar2TC/waydroid-wrapper</url>
+  <description>
+    <p>
+      Waydroid Profile Manager applies saved display profiles to a running
+      Waydroid session: host window resolution, Android display density and
+      orientation, in one click with progress reporting.
+    </p>
+    <p>
+      The current configuration is backed up before anything is changed, so
+      Reset puts the previous resolution, density and rotation settings back.
+    </p>
+    <ul>
+      <li>Switch between resolution profiles with a single click</li>
+      <li>Portrait and landscape orientations per profile</li>
+      <li>Backup and restore of the previous display configuration</li>
+      <li>Create, duplicate, import and export custom profiles as JSON</li>
+      <li>Live progress log while a profile is applied</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">com.waydroidpm.waydroid_profile_manager.desktop</launchable>
+  <provides>
+    <binary>waydroid_profile_manager</binary>
+  </provides>
+  <releases>
+    <release version="1.0.0" date="2026-10-17"/>
+  </releases>
+  <content_rating type="oars-1.1"/>
+</component>

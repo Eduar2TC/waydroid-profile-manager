@@ -17,6 +17,14 @@ pub struct WaydroidBackup {
     pub width: Option<String>,
     pub height: Option<String>,
     pub density: Option<String>,
+    /// `wm size` override (e.g. "640x360") as reported by the container
+    /// before anything was applied. None means there was no override.
+    #[serde(default)]
+    pub wm_size: Option<String>,
+    /// `wm density` override (e.g. "320") as reported by the container
+    /// before anything was applied. None means there was no override.
+    #[serde(default)]
+    pub wm_density: Option<String>,
     pub accelerometer_rotation: Option<String>,
     pub user_rotation: Option<String>,
     pub timestamp: String,
@@ -29,7 +37,6 @@ pub struct AppState {
     pub active_profile_id: Option<String>,
     pub backup: Option<WaydroidBackup>,
 }
-
 
 /// Repository for profile persistence.
 pub struct ProfileRepository {

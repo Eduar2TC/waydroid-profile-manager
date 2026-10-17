@@ -57,7 +57,6 @@ impl std::fmt::Display for Orientation {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

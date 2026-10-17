@@ -4,7 +4,7 @@ use crate::domain::configuration_calculator::calculate_configuration;
 use crate::domain::orientation::Orientation;
 use crate::domain::profile::Profile;
 use crate::domain::waydroid_status::{OperationProgress, SessionStatus};
-use crate::infrastructure::storage::profiles::{AppState, ProfileRepository, WaydroidBackup};
+use crate::infrastructure::storage::profiles::{ProfileRepository, WaydroidBackup};
 use crate::infrastructure::waydroid::backend_trait::WaydroidBackend;
 
 /// Result of an apply operation.
@@ -22,7 +22,8 @@ pub struct ApplyResult {
 /// CRITICAL: `waydroid prop set` only works when the session is RUNNING.
 /// Props must be set BEFORE stopping, so they're saved to the config file.
 /// The new session then reads the updated config on startup.
-// 8 args: use case con callback de progreso — la firma FFI lo requiere.
+// La firma tiene 8 argumentos porque el callback de progreso va como
+// Arc<Mutex<dyn FnMut>>, que supera el umbral de complejidad de clippy.
 #[allow(clippy::type_complexity)]
 pub fn apply_profile(
     backend: &dyn WaydroidBackend,
@@ -241,11 +242,16 @@ pub fn apply_profile(
         emit_progress("Verifying", "Configuration verified", true);
     }
 
-    // Step 11: Update active profile in state
-    let _ = repository.save_state(&AppState {
-        active_profile_id: Some(profile.id.clone()),
-        backup: None,
-    });
+    // Step 11: Update active profile in state, preserving the backup captured
+    // in Step 3 — `reset` needs it to restore the configuration we overwrote.
+    // Writing `backup: None` here would wipe it and make reset a no-op that
+    // always fails with "No backup available to restore".
+    if let Ok(mut current) = repository.load_state() {
+        current.active_profile_id = Some(profile.id.clone());
+        if let Err(e) = repository.save_state(&current) {
+            log::warn!("Failed to save active profile: {}", e);
+        }
+    }
 
     ApplyResult {
         success: true,
@@ -256,8 +262,9 @@ pub fn apply_profile(
 
 /// Save current Waydroid configuration as backup.
 ///
-/// Captures width/height/density props AND rotation settings so that
-/// `reset` can fully restore the previous configuration.
+/// Captures the host window props, the container's `wm size`/`wm density`
+/// overrides and the rotation settings so that `reset` can put every one of
+/// them back exactly as it found them.
 fn save_backup(
     backend: &dyn WaydroidBackend,
     repository: &ProfileRepository,
@@ -267,12 +274,30 @@ fn save_backup(
     // Read current props (host window + density) BEFORE modifying anything.
     // get_prop returns None if the prop is not set — that's fine: reset will
     // skip restoring it and Waydroid keeps its default.
+    //
+    // The `wm`/`settings` probes go through the Android shell, which only
+    // answers while the session runs (and each failed probe retries with
+    // sleeps), so skip them when it is down: there is nothing to read then.
+    let session_running = backend.get_session_status() == SessionStatus::Running;
+    let (accelerometer_rotation, user_rotation, wm_size, wm_density) = if session_running {
+        (
+            read_setting(backend, "accelerometer_rotation"),
+            read_setting(backend, "user_rotation"),
+            read_wm_override(backend, "size"),
+            read_wm_override(backend, "density"),
+        )
+    } else {
+        (None, None, None, None)
+    };
+
     let backup = WaydroidBackup {
         width: backend.get_prop("persist.waydroid.width"),
         height: backend.get_prop("persist.waydroid.height"),
         density: backend.get_prop("persist.waydroid.density"),
-        accelerometer_rotation: read_setting(backend, "accelerometer_rotation"),
-        user_rotation: read_setting(backend, "user_rotation"),
+        accelerometer_rotation,
+        user_rotation,
+        wm_size,
+        wm_density,
         timestamp: Utc::now().to_rfc3339(),
     };
 
@@ -301,6 +326,30 @@ fn read_setting(backend: &dyn WaydroidBackend, key: &str) -> Option<String> {
         .filter(|r| r.success)
         .map(|r| r.stdout.trim().to_string())
         .filter(|s| !s.is_empty() && s != "null")
+}
+
+/// Read the container's current `wm size`/`wm density` override, e.g.
+/// "640x360" from a line like `Override size: 640x360`.
+///
+/// Returns None when there is no override (or the shell is unreachable),
+/// which reset interprets as "no override before applying" and clears with
+/// `wm ... reset`.
+fn read_wm_override(backend: &dyn WaydroidBackend, kind: &str) -> Option<String> {
+    let prefix = match kind {
+        "size" => "Override size:",
+        _ => "Override density:",
+    };
+    let result = backend.shell_command(&["wm", kind]).ok()?;
+    if !result.success {
+        return None;
+    }
+    result
+        .stdout
+        .lines()
+        .find_map(|line| line.trim().strip_prefix(prefix))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
 }
 
 #[cfg(test)]
@@ -415,6 +464,45 @@ mod tests {
         assert!(recorded_steps.contains(&"Validating".to_string()));
         assert!(recorded_steps.contains(&"OpeningUi".to_string()));
         assert!(recorded_steps.contains(&"RestartingSession".to_string()));
+    }
+
+    #[test]
+    fn apply_keeps_backup_so_reset_can_restore_it() {
+        let (backend, repo, _tmp) = setup();
+        // Seed the "original" configuration so the backup has something real
+        // to capture (the fake backend starts with no props set).
+        backend.set_prop("persist.waydroid.width", "1024").unwrap();
+        backend.set_prop("persist.waydroid.height", "768").unwrap();
+        backend.set_prop("persist.waydroid.density", "240").unwrap();
+
+        let profile = Profile::builtin(
+            "phone-sm", "Phone Small", "Small phone", 640, 360, 160,
+            Orientation::Portrait,
+        );
+        let apply = apply_profile(&backend, &repo, &profile, Orientation::Portrait, None);
+        assert!(apply.success, "Apply failed: {}", apply.message);
+
+        // The final state save must keep the backup from Step 3, otherwise
+        // reset always fails with "No backup available" and restores nothing.
+        let state = repo.load_state().unwrap();
+        assert!(state.backup.is_some(), "apply must keep the config backup");
+        assert_eq!(state.active_profile_id.as_deref(), Some("phone-sm"));
+        assert_eq!(state.backup.as_ref().unwrap().width.as_deref(), Some("1024"));
+
+        let reset = crate::application::reset::reset_waydroid(&backend, &repo);
+        assert!(reset.success, "Reset failed: {}", reset.message);
+        assert_eq!(reset.message, "Restored: width, height, density");
+
+        let state = backend.state.lock().unwrap();
+        assert_eq!(state.props["persist.waydroid.width"], "1024");
+        assert_eq!(state.props["persist.waydroid.height"], "768");
+        assert_eq!(state.props["persist.waydroid.density"], "240");
+        // No override was recorded, so the display override apply() created
+        // must be cleared rather than left behind.
+        assert!(state
+            .commands_executed
+            .iter()
+            .any(|c| c.contains("wm size reset")));
     }
 
     #[test]
