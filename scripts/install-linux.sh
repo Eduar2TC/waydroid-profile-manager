@@ -33,6 +33,13 @@ ln -sf "$APP_DIR/waydroid_profile_manager" "$BIN_DIR/waydroid_profile_manager"
 
 cp "$SRC/share/applications/com.waydroidpm.waydroid_profile_manager.desktop" \
    "$PREFIX/share/applications/"
+# Point Exec at the absolute installed binary. A bare `Exec=waydroid_profile_manager`
+# only works while $BIN_DIR is in the *session* PATH — which it isn't right after a
+# first install (~/.profile adds ~/.local/bin on the next login, and only if the
+# directory existed by then). Without this, KDE/GNOME launch the menu entry with
+# "No se ha podido encontrar el programa «waydroid_profile_manager»".
+sed -i "s|^Exec=waydroid_profile_manager$|Exec=$BIN_DIR/waydroid_profile_manager|" \
+   "$PREFIX/share/applications/com.waydroidpm.waydroid_profile_manager.desktop"
 cp -a "$SRC/share/icons/hicolor/." "$PREFIX/share/icons/hicolor/"
 
 # AppStream metadata (appdata) for GNOME Software / Discover / AppInstaller.
